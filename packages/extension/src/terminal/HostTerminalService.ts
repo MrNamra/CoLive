@@ -11,7 +11,7 @@ import {
   TerminalOpenRes,
   TerminalResize,
 } from '@colive/protocol';
-import { ConnectionManager } from '../connection/ConnectionManager.js';
+import { ConnectionManager } from '../connection.js';
 
 export interface HostTerminalSession {
   terminalId: string;

@@ -59,6 +59,15 @@ export class ConnectionManager {
     this.listeners[event]?.delete(listener);
   }
 
+  public onMessage(listener: (msg: ColiveMessage) => void): vscode.Disposable {
+    this.on('message', listener);
+    return {
+      dispose: () => {
+        this.off('message', listener);
+      },
+    };
+  }
+
   private emit<K extends keyof ConnectionEvents>(event: K, ...args: Parameters<ConnectionEvents[K]>): void {
     const set = this.listeners[event];
     if (set) {

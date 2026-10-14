@@ -10,7 +10,7 @@ import {
 } from '@colive/protocol';
 import { HostTerminalService } from '../src/terminal/HostTerminalService.js';
 import { GuestTerminalService } from '../src/terminal/GuestTerminalService.js';
-import { ConnectionManager } from '../src/connection/ConnectionManager.js';
+import { ConnectionManager } from '../src/connection.js';
 
 describe('Milestone 11: Shared Terminal (Host & Guest Pseudoterminals)', () => {
   let mockConnectionHost: ConnectionManager;
