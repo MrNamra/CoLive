@@ -128,7 +128,12 @@ export function createServer(
 }
 
 // Graceful shutdown helper
-if (process.env.NODE_ENV !== 'test' && import.meta.url === `file://${process.argv[1]}`) {
+const isDirectRun =
+  process.env.NODE_ENV !== 'test' &&
+  (import.meta.url === `file://${process.argv[1]}` ||
+    process.argv.some((arg) => arg.includes('index.ts') || arg.includes('index.js')));
+
+if (isDirectRun) {
   createServer().then((inst) => {
     const handleSignal = async (sig: string) => {
       logger.info({ signal: sig }, 'Received termination signal. Shutting down gracefully...');
