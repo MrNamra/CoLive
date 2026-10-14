@@ -5,3 +5,4 @@ export * from './messages.js';
 export * from './framing.js';
 export * from './paths.js';
 export * from './utils.js';
+export * from './crypto.js';
