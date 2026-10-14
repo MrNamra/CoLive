@@ -21,7 +21,7 @@ cleanup() {
   if [ -n "$SERVER_PID" ] && kill -0 "$SERVER_PID" 2>/dev/null; then
     kill "$SERVER_PID" 2>/dev/null || true
   fi
-  rm -f "$TUNNEL_LOG" "$TUNNEL_URL_FILE"
+  rm -f "$TUNNEL_LOG" "$TUNNEL_URL_FILE" "/tmp/colive-tunnel-url" "$HOME/.colive-tunnel-url" 2>/dev/null || true
 }
 
 trap cleanup SIGINT SIGTERM EXIT
@@ -76,8 +76,10 @@ fi
 
 WS_URL="${TUNNEL_URL/https:\/\//wss:\/\/}/ws"
 
-# Save tunnel URL for extension auto-discovery
+# Save tunnel URL for extension auto-discovery across any workspace or folder
 echo "$WS_URL" > "$TUNNEL_URL_FILE"
+echo "$WS_URL" > "/tmp/colive-tunnel-url"
+echo "$WS_URL" > "$HOME/.colive-tunnel-url" 2>/dev/null || true
 
 echo -e "\033[1;32m[3/3] Cloudflare Tunnel Established Successfully! 🌍\033[0m\n"
 echo -e "========================================================="

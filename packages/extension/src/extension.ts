@@ -56,6 +56,7 @@ export function activate(context: vscode.ExtensionContext): void {
         const query = new URLSearchParams(uri.query);
         const sessionId = query.get('session');
         const secret = query.get('secret') || uri.fragment;
+        const serverUrl = query.get('server') || undefined;
 
         if (sessionId && secret) {
           vscode.window
@@ -66,7 +67,7 @@ export function activate(context: vscode.ExtensionContext): void {
             )
             .then((action) => {
               if (action === 'Join Session') {
-                joinSessionByIdAndSecret(sessionId, secret);
+                joinSessionByIdAndSecret(sessionId, secret, serverUrl);
               }
             });
         }
@@ -436,15 +437,20 @@ async function promptJoinSession(): Promise<void> {
     return;
   }
 
-  await joinSessionByIdAndSecret(parsed.sessionId, parsed.secret);
+  await joinSessionByIdAndSecret(parsed.sessionId, parsed.secret, parsed.serverUrl);
 }
 
-async function joinSessionByIdAndSecret(sessionId: string, secret: string): Promise<void> {
+async function joinSessionByIdAndSecret(
+  sessionId: string,
+  secret: string,
+  serverUrl?: string,
+): Promise<void> {
   const config = getExtensionConfig();
+  const targetServerUrl = serverUrl || config.serverUrl;
   const displayName = await resolveDisplayName();
 
   try {
-    const guestSession = new GuestSession(config.serverUrl, sessionId, secret, displayName);
+    const guestSession = new GuestSession(targetServerUrl, sessionId, secret, displayName);
     activeSession = guestSession;
     statusBar?.setSession(guestSession);
     participantsTree?.setSession(guestSession);
@@ -455,7 +461,7 @@ async function joinSessionByIdAndSecret(sessionId: string, secret: string): Prom
     chatProvider?.setSession(guestSession.connection, guestSession.guestId, displayName);
   } catch (err) {
     Logger.error('Failed to join session', err);
-    vscode.window.showErrorMessage(`Failed to join CoLive session: ${err instanceof Error ? err.message : String(err)}`);
+    vscode.window.showErrorMessage(`Failed to join CoLive session (${targetServerUrl}): ${err instanceof Error ? err.message : String(err)}`);
     activeSession = null;
     statusBar?.setSession(null);
     participantsTree?.setSession(null);

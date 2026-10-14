@@ -254,9 +254,9 @@ export class GuestSession extends SessionController {
   }
 
   public async copyInvite(): Promise<void> {
-    const pasteCode = buildPasteCode(this.sessionId, this.inviteSecret);
-    await vscode.env.clipboard.writeText(pasteCode);
-    vscode.window.showInformationMessage('CoLive: Invite code copied to clipboard.');
+    const deepLink = buildDeepLink(this.sessionId, this.inviteSecret, this.serverUrl);
+    await vscode.env.clipboard.writeText(deepLink);
+    vscode.window.showInformationMessage('CoLive: Worldwide invite link copied to clipboard.');
   }
 
   public async endSession(): Promise<void> {

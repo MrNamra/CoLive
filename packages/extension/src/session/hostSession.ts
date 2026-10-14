@@ -165,15 +165,15 @@ export class HostSession extends SessionController {
     this.setState('active');
     this._onDidChangeParticipants.fire(this.getParticipants());
 
-    // Copy paste code to clipboard by default
-    const pasteCode = buildPasteCode(this.sessionId, this.inviteSecret);
-    await vscode.env.clipboard.writeText(pasteCode);
+    // Copy deep link or paste code to clipboard by default
+    const deepLink = buildDeepLink(this.sessionId, this.inviteSecret, this.serverUrl);
+    const pasteCode = buildPasteCode(this.sessionId, this.inviteSecret, this.serverUrl);
+    await vscode.env.clipboard.writeText(deepLink);
 
     vscode.window
       .showInformationMessage(Strings.sessionStarted, Strings.copyLink, Strings.copyCode, Strings.showParticipants)
       .then((action) => {
         if (action === Strings.copyLink) {
-          const deepLink = buildDeepLink(this.sessionId, this.inviteSecret);
           vscode.env.clipboard.writeText(deepLink);
           vscode.window.showInformationMessage('CoLive: Invite deep link copied to clipboard.');
         } else if (action === Strings.copyCode) {
@@ -294,9 +294,9 @@ export class HostSession extends SessionController {
   }
 
   public async copyInvite(): Promise<void> {
-    const pasteCode = buildPasteCode(this.sessionId, this.inviteSecret);
-    await vscode.env.clipboard.writeText(pasteCode);
-    vscode.window.showInformationMessage('CoLive: Invite code copied to clipboard.');
+    const deepLink = buildDeepLink(this.sessionId, this.inviteSecret, this.serverUrl);
+    await vscode.env.clipboard.writeText(deepLink);
+    vscode.window.showInformationMessage('CoLive: Worldwide invite link copied to clipboard.');
   }
 
   public async endSession(): Promise<void> {

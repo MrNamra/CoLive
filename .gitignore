@@ -7,3 +7,5 @@ build/
 *.tsbuildinfo
 coverage/
 .dev/
+*.zip
+.tunnel-url

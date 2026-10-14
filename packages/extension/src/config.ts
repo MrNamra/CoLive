@@ -21,12 +21,24 @@ export function getExtensionConfig(): ExtensionConfig {
   let serverUrl = cfg.get<string>('serverUrl', 'ws://localhost:8787/ws');
 
   // Auto-discover local Cloudflare .tunnel-url if configured to default localhost
-  if (serverUrl === 'ws://localhost:8787/ws' && vscode.workspace.workspaceFolders) {
-    for (const folder of vscode.workspace.workspaceFolders) {
-      const tunnelFilePath = path.join(folder.uri.fsPath, '.tunnel-url');
-      if (fs.existsSync(tunnelFilePath)) {
+  if (serverUrl === 'ws://localhost:8787/ws') {
+    const candidatePaths: string[] = [];
+    if (vscode.workspace.workspaceFolders) {
+      for (const folder of vscode.workspace.workspaceFolders) {
+        candidatePaths.push(path.join(folder.uri.fsPath, '.tunnel-url'));
+      }
+    }
+    candidatePaths.push('/tmp/colive-tunnel-url');
+    try {
+      candidatePaths.push(path.join(os.homedir(), '.colive-tunnel-url'));
+    } catch {
+      // ignore
+    }
+
+    for (const p of candidatePaths) {
+      if (fs.existsSync(p)) {
         try {
-          const content = fs.readFileSync(tunnelFilePath, 'utf8').trim();
+          const content = fs.readFileSync(p, 'utf8').trim();
           if (content.startsWith('ws://') || content.startsWith('wss://')) {
             serverUrl = content;
             break;

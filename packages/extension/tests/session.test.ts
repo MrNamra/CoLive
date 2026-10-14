@@ -31,6 +31,36 @@ describe('Invite Link & Paste Code Utilities', () => {
     expect(parsed?.secret).toBe(secret);
   });
 
+  it('embeds and parses serverUrl for worldwide Cloudflare connections', () => {
+    const serverUrl = 'wss://quick-tunnel-123.trycloudflare.com/ws';
+    const deepLink = buildDeepLink(sessionId, secret, serverUrl);
+    expect(deepLink).toContain(`server=${encodeURIComponent(serverUrl)}`);
+
+    const parsedDeepLink = parseInviteInput(deepLink);
+    expect(parsedDeepLink).not.toBeNull();
+    expect(parsedDeepLink?.sessionId).toBe(sessionId);
+    expect(parsedDeepLink?.secret).toBe(secret);
+    expect(parsedDeepLink?.serverUrl).toBe(serverUrl);
+
+    // Paste code with server
+    const pasteCode = buildPasteCode(sessionId, secret, serverUrl);
+    expect(pasteCode).toBe(`${sessionId}.${secret}@${serverUrl}`);
+
+    const parsedPasteCode = parseInviteInput(pasteCode);
+    expect(parsedPasteCode).not.toBeNull();
+    expect(parsedPasteCode?.sessionId).toBe(sessionId);
+    expect(parsedPasteCode?.secret).toBe(secret);
+    expect(parsedPasteCode?.serverUrl).toBe(serverUrl);
+
+    // Cloudflare web landing URL
+    const cfWebUrl = `https://quick-tunnel-123.trycloudflare.com/j/${sessionId}#${secret}`;
+    const parsedWeb = parseInviteInput(cfWebUrl);
+    expect(parsedWeb).not.toBeNull();
+    expect(parsedWeb?.sessionId).toBe(sessionId);
+    expect(parsedWeb?.secret).toBe(secret);
+    expect(parsedWeb?.serverUrl).toBe(serverUrl);
+  });
+
   it('parses web landing link with fragment correctly', () => {
     const webUrl = `http://localhost:8787/j/${sessionId}#${secret}`;
     const parsed = parseInviteInput(webUrl);
