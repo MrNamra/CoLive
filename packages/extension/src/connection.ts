@@ -90,8 +90,48 @@ export class ConnectionManager {
     }
   }
 
-  public connect(): Promise<void> {
+  public async connect(maxRetries = 6, retryDelayMs = 2000): Promise<void> {
     this.intentionallyClosed = false;
+    let lastErr: unknown;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      if (this.intentionallyClosed) return;
+      try {
+        await this.attemptConnect();
+        return;
+      } catch (err) {
+        lastErr = err;
+        if (this.intentionallyClosed) return;
+        const msg = err instanceof Error ? err.message : String(err);
+        const isCloudflareEdgePropagating =
+          msg.includes('530') ||
+          msg.includes('502') ||
+          msg.includes('503') ||
+          msg.includes('ENOTFOUND') ||
+          msg.includes('closed before opening');
+
+        if (isCloudflareEdgePropagating && attempt < maxRetries) {
+          Logger.info(
+            `Relay server edge warming up (${msg}). Retrying connection (${attempt}/${maxRetries}) in ${retryDelayMs}ms...`,
+          );
+          await new Promise((r) => setTimeout(r, retryDelayMs));
+          continue;
+        }
+
+        if (msg.includes('530')) {
+          throw new Error(
+            `Cloudflare Tunnel is not yet ready or the session has ended (HTTP 530). If the host just started the session, please try again in a few moments.`,
+          );
+        }
+
+        throw err;
+      }
+    }
+
+    if (lastErr) throw lastErr;
+  }
+
+  private attemptConnect(): Promise<void> {
     return new Promise((resolve, reject) => {
       this.setState(this.reconnectAttempt > 0 ? 'reconnecting' : 'connecting');
       Logger.info(`Connecting to relay server at: ${this.url}`);

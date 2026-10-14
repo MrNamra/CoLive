@@ -18,42 +18,12 @@ export interface ExtensionConfig {
 
 export function getExtensionConfig(): ExtensionConfig {
   const cfg = vscode.workspace.getConfiguration('colive');
-  let serverUrl = cfg.get<string>('serverUrl', 'ws://localhost:8787/ws');
+  let serverUrl = cfg.get<string>('serverUrl', 'ws://127.0.0.1:8787/ws');
 
-  // trycloudflare.com URLs are ephemeral and die when the tunnel closes.
-  // Never persist dead trycloudflare.com URLs as default relay.
-  if (serverUrl.includes('trycloudflare.com')) {
-    serverUrl = 'ws://localhost:8787/ws';
-  }
-
-  // Auto-discover local Cloudflare .tunnel-url if configured to default localhost
-  if (serverUrl === 'ws://localhost:8787/ws') {
-    const candidatePaths: string[] = [];
-    if (vscode.workspace.workspaceFolders) {
-      for (const folder of vscode.workspace.workspaceFolders) {
-        candidatePaths.push(path.join(folder.uri.fsPath, '.tunnel-url'));
-      }
-    }
-    candidatePaths.push('/tmp/colive-tunnel-url');
-    try {
-      candidatePaths.push(path.join(os.homedir(), '.colive-tunnel-url'));
-    } catch {
-      // ignore
-    }
-
-    for (const p of candidatePaths) {
-      if (fs.existsSync(p)) {
-        try {
-          const content = fs.readFileSync(p, 'utf8').trim();
-          if (content.startsWith('ws://') || content.startsWith('wss://')) {
-            serverUrl = content;
-            break;
-          }
-        } catch {
-          // ignore
-        }
-      }
-    }
+  // trycloudflare.com URLs are ephemeral and die when the session ends.
+  // Never persist or treat stale trycloudflare.com URLs as default relay.
+  if (serverUrl.includes('trycloudflare.com') || serverUrl === 'ws://localhost:8787/ws') {
+    serverUrl = 'ws://127.0.0.1:8787/ws';
   }
 
   return {

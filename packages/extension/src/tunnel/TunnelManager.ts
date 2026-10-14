@@ -337,13 +337,14 @@ export class TunnelManager implements vscode.Disposable {
 
           // Warm up edge to ensure DNS and edge proxying have propagated before returning
           (async () => {
-            for (let i = 0; i < 8; i++) {
+            Logger.info(`Warming up Cloudflare edge at ${webUrl}/health...`);
+            for (let i = 0; i < 15; i++) {
               const ok = await this.pingEndpoint(`${webUrl}/health`);
               if (ok) {
                 Logger.info('Cloudflare edge confirmed ready (HTTP 200).');
                 break;
               }
-              await new Promise((r) => setTimeout(r, 400));
+              await new Promise((r) => setTimeout(r, 600));
             }
             resolve(wsUrl);
           })();
@@ -373,12 +374,7 @@ export class TunnelManager implements vscode.Disposable {
   }
 
   private saveTunnelUrls(wsUrl: string): void {
-    const candidatePaths: string[] = ['/tmp/colive-tunnel-url'];
-    try {
-      candidatePaths.push(path.join(os.homedir(), '.colive-tunnel-url'));
-    } catch {
-      // ignore
-    }
+    const candidatePaths: string[] = [];
     if (vscode.workspace.workspaceFolders) {
       for (const folder of vscode.workspace.workspaceFolders) {
         candidatePaths.push(path.join(folder.uri.fsPath, '.tunnel-url'));
