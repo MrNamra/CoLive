@@ -359,7 +359,7 @@
     "yjs": "^13.6.20"
   },
   "devDependencies": {
-    "@types/node": "^20.17.6",
+    "@types/node": "^26.6.5",
     "@types/vscode": "^1.90.0",
     "@types/ws": "^8.5.13",
     "@vscode/vsce": "^3.2.1",
