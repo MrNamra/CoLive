@@ -8,10 +8,14 @@ import { SessionController } from './session/sessionController.js';
 import { Strings } from './strings.js';
 import { ParticipantsTreeProvider, ParticipantTreeItem } from './ui/participantsTree.js';
 import { StatusBarManager } from './ui/statusBar.js';
+import { ChatViewProvider } from './chat/chatViewProvider.js';
+import { CommentsTreeProvider } from './comments/commentsTree.js';
 
 let activeSession: SessionController | null = null;
 let statusBar: StatusBarManager | null = null;
 let participantsTree: ParticipantsTreeProvider | null = null;
+let commentsTree: CommentsTreeProvider | null = null;
+let chatProvider: ChatViewProvider | null = null;
 
 export function activate(context: vscode.ExtensionContext): void {
   Logger.initialize();
@@ -19,16 +23,31 @@ export function activate(context: vscode.ExtensionContext): void {
 
   statusBar = new StatusBarManager();
   participantsTree = new ParticipantsTreeProvider();
+  commentsTree = new CommentsTreeProvider();
+  chatProvider = new ChatViewProvider(context.extensionUri);
 
   context.subscriptions.push(statusBar);
   context.subscriptions.push(participantsTree);
+  context.subscriptions.push(commentsTree);
+  context.subscriptions.push(chatProvider);
 
-  // Register Tree View
+  // Register Tree Views
   const treeView = vscode.window.createTreeView('colive.participants', {
     treeDataProvider: participantsTree,
     showCollapseAll: true,
   });
   context.subscriptions.push(treeView);
+
+  const commentsTreeView = vscode.window.createTreeView('colive.comments', {
+    treeDataProvider: commentsTree,
+    showCollapseAll: true,
+  });
+  context.subscriptions.push(commentsTreeView);
+
+  // Register Chat Webview View Provider
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider(ChatViewProvider.viewType, chatProvider),
+  );
 
   // Register URI handler for deep links: vscode://colive-team.colive/join?...
   const uriHandler: vscode.UriHandler = {
@@ -185,6 +204,60 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
   );
 
+  context.subscriptions.push(
+    vscode.commands.registerCommand('colive.exportComments', async () => {
+      let manager = null;
+      if (activeSession instanceof HostSession) manager = activeSession.commentsManager;
+      if (activeSession instanceof GuestSession) manager = activeSession.commentsManager;
+      if (!manager) {
+        vscode.window.showInformationMessage('No active comments session.');
+        return;
+      }
+      const data = manager.exportComments();
+      const doc = await vscode.workspace.openTextDocument({ content: data, language: 'json' });
+      await vscode.window.showTextDocument(doc);
+    }),
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('colive.importComments', async () => {
+      let manager = null;
+      if (activeSession instanceof HostSession) manager = activeSession.commentsManager;
+      if (activeSession instanceof GuestSession) manager = activeSession.commentsManager;
+      if (!manager) {
+        vscode.window.showInformationMessage('No active comments session.');
+        return;
+      }
+      const input = await vscode.window.showInputBox({
+        prompt: 'Paste JSON comments export string',
+      });
+      if (input) {
+        const count = manager.importComments(input);
+        vscode.window.showInformationMessage(`Imported ${count} comment thread(s).`);
+      }
+    }),
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('colive.openCommentThread', async (threadData: any) => {
+      if (!threadData || !threadData.path) return;
+      let targetUri: vscode.Uri;
+      if (activeSession instanceof HostSession) {
+        targetUri = vscode.Uri.file(`${vscode.workspace.workspaceFolders?.[0]?.uri.fsPath}/${threadData.path}`);
+      } else {
+        targetUri = vscode.Uri.parse(`colive:/Shared/${threadData.path}`);
+      }
+      try {
+        const doc = await vscode.workspace.openTextDocument(targetUri);
+        const editor = await vscode.window.showTextDocument(doc);
+        const pos = new vscode.Position(threadData.range.startLine, threadData.range.startChar);
+        editor.revealRange(new vscode.Range(pos, pos));
+      } catch (err) {
+        Logger.warn('Failed to open comment thread file', { err, path: threadData.path });
+      }
+    }),
+  );
+
   Logger.info('CoLive extension activated successfully.');
 }
 
@@ -219,12 +292,16 @@ async function startHostSession(): Promise<void> {
 
     await hostSession.start();
     participantsTree?.setSession(hostSession, hostSession.presenceManager, hostSession.followController);
+    commentsTree?.setCommentsManager(hostSession.commentsManager);
+    chatProvider?.setSession(hostSession.connection, 'host', displayName);
   } catch (err) {
     Logger.error('Failed to start host session', err);
     vscode.window.showErrorMessage(`Failed to start CoLive session: ${err instanceof Error ? err.message : String(err)}`);
     activeSession = null;
     statusBar?.setSession(null);
     participantsTree?.setSession(null);
+    commentsTree?.setCommentsManager(null);
+    chatProvider?.setSession(null, '', '');
   }
 }
 
@@ -263,12 +340,16 @@ async function joinSessionByIdAndSecret(sessionId: string, secret: string): Prom
 
     await guestSession.join();
     participantsTree?.setSession(guestSession, guestSession.presenceManager, guestSession.followController);
+    commentsTree?.setCommentsManager(guestSession.commentsManager);
+    chatProvider?.setSession(guestSession.connection, guestSession.guestId, displayName);
   } catch (err) {
     Logger.error('Failed to join session', err);
     vscode.window.showErrorMessage(`Failed to join CoLive session: ${err instanceof Error ? err.message : String(err)}`);
     activeSession = null;
     statusBar?.setSession(null);
     participantsTree?.setSession(null);
+    commentsTree?.setCommentsManager(null);
+    chatProvider?.setSession(null, '', '');
   }
 }
 
@@ -287,6 +368,8 @@ async function endCurrentSession(): Promise<void> {
     activeSession = null;
     statusBar?.setSession(null);
     participantsTree?.setSession(null);
+    commentsTree?.setCommentsManager(null);
+    chatProvider?.setSession(null, '', '');
     vscode.window.showInformationMessage(Strings.sessionEnded);
   }
 }
@@ -299,5 +382,7 @@ export function deactivate(): void {
   }
   statusBar?.dispose();
   participantsTree?.dispose();
+  commentsTree?.dispose();
+  chatProvider?.dispose();
   Logger.dispose();
 }

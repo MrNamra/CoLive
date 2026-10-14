@@ -433,6 +433,150 @@ export const workspace = {
   },
 };
 
+export class MarkdownString {
+  public value: string;
+  public isTrusted: boolean;
+
+  constructor(value = '', isTrusted = false) {
+    this.value = value;
+    this.isTrusted = isTrusted;
+  }
+
+  public appendMarkdown(val: string): MarkdownString {
+    this.value += val;
+    return this;
+  }
+}
+
+export enum CommentMode {
+  Preview = 0,
+  Editing = 1,
+}
+
+export enum CommentThreadCollapsibleState {
+  Collapsed = 0,
+  Expanded = 1,
+}
+
+export interface MockComment {
+  author: { name: string; iconPath?: Uri };
+  body: MarkdownString | string;
+  mode?: CommentMode;
+  contextValue?: string;
+}
+
+export class MockCommentThread {
+  public uri: Uri;
+  public range: Range;
+  public comments: MockComment[];
+  public collapsibleState: CommentThreadCollapsibleState = CommentThreadCollapsibleState.Expanded;
+  public canReply = true;
+  public label?: string;
+  public contextValue?: string;
+  public isDisposed = false;
+
+  constructor(uri: Uri, range: Range, comments: MockComment[] = []) {
+    this.uri = uri;
+    this.range = range;
+    this.comments = comments;
+  }
+
+  public dispose(): void {
+    this.isDisposed = true;
+  }
+}
+
+export class MockCommentController {
+  public id: string;
+  public label: string;
+  public commentingRangeProvider?: unknown;
+  public threads: MockCommentThread[] = [];
+
+  constructor(id: string, label: string) {
+    this.id = id;
+    this.label = label;
+  }
+
+  public createCommentThread(uri: Uri, range: Range, comments: MockComment[] = []): MockCommentThread {
+    const thread = new MockCommentThread(uri, range, comments);
+    this.threads.push(thread);
+    return thread;
+  }
+
+  public dispose(): void {
+    for (const t of this.threads) {
+      t.dispose();
+    }
+    this.threads = [];
+  }
+}
+
+export const comments = {
+  createCommentController: (id: string, label: string): MockCommentController => {
+    return new MockCommentController(id, label);
+  },
+};
+
+export enum DiagnosticSeverity {
+  Error = 0,
+  Warning = 1,
+  Information = 2,
+  Hint = 3,
+}
+
+export class Diagnostic {
+  public range: Range;
+  public message: string;
+  public severity: DiagnosticSeverity;
+  public source?: string;
+  public code?: string | number;
+
+  constructor(range: Range, message: string, severity: DiagnosticSeverity = DiagnosticSeverity.Error) {
+    this.range = range;
+    this.message = message;
+    this.severity = severity;
+  }
+}
+
+export class MockDiagnosticCollection {
+  public name: string;
+  private entriesMap: Map<string, Diagnostic[]> = new Map();
+
+  constructor(name: string) {
+    this.name = name;
+  }
+
+  public set(uri: Uri, diagnostics: Diagnostic[] | undefined): void {
+    if (!diagnostics || diagnostics.length === 0) {
+      this.entriesMap.delete(uri.toString());
+    } else {
+      this.entriesMap.set(uri.toString(), diagnostics);
+    }
+  }
+
+  public get(uri: Uri): Diagnostic[] | undefined {
+    return this.entriesMap.get(uri.toString());
+  }
+
+  public clear(): void {
+    this.entriesMap.clear();
+  }
+
+  public dispose(): void {
+    this.entriesMap.clear();
+  }
+}
+
+export const onDidChangeDiagnosticsEmitter = new EventEmitter<unknown>();
+
+export const languages = {
+  createDiagnosticCollection: (name: string): MockDiagnosticCollection => {
+    return new MockDiagnosticCollection(name);
+  },
+  getDiagnostics: (_uri?: Uri): Diagnostic[] => [],
+  onDidChangeDiagnostics: onDidChangeDiagnosticsEmitter.event,
+};
+
 export const commands = {
   registerCommand: () => new Disposable(),
   executeCommand: async () => undefined,
@@ -443,4 +587,5 @@ export const env = {
     writeText: async () => {},
     readText: async () => '',
   },
+  openExternal: async () => true,
 };

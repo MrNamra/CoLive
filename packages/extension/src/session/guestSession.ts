@@ -17,6 +17,8 @@ import { SyncManager } from '../sync/SyncManager.js';
 import { PresenceManager } from '../presence/PresenceManager.js';
 import { RemoteCursorRenderer } from '../presence/RemoteCursorRenderer.js';
 import { FollowController } from '../presence/FollowController.js';
+import { CommentsManager } from '../comments/CommentsManager.js';
+import { GuestDiagnosticsReceiver } from '../diagnostics/diagnosticsService.js';
 import { SessionController } from './sessionController.js';
 
 export class GuestSession extends SessionController {
@@ -31,6 +33,8 @@ export class GuestSession extends SessionController {
   public presenceManager: PresenceManager | null = null;
   public cursorRenderer: RemoteCursorRenderer | null = null;
   public followController: FollowController | null = null;
+  public commentsManager: CommentsManager | null = null;
+  public diagnosticsReceiver: GuestDiagnosticsReceiver | null = null;
   private fsRegistration: vscode.Disposable | null = null;
   private mountedFolderUri: vscode.Uri | null = null;
   private serverUrl: string;
@@ -164,6 +168,25 @@ export class GuestSession extends SessionController {
             role: 'guest',
           });
 
+          // Initialize comments manager
+          this.commentsManager = new CommentsManager({
+            connection: this.connection!,
+            role: 'guest',
+            userId: this.guestId,
+            userName: this.displayName,
+            userColor: '#3CB44B',
+            permission: this.permission,
+            syncManager: this.syncManager,
+            folderName,
+            allowReadOnlyComments: true,
+          });
+
+          // Initialize diagnostics receiver
+          this.diagnosticsReceiver = new GuestDiagnosticsReceiver(
+            this.connection!,
+            folderName,
+          );
+
           this.setState('active');
           this._onDidChangeParticipants.fire(this.getParticipants());
           vscode.window.showInformationMessage(Strings.joinApproved);
@@ -236,6 +259,14 @@ export class GuestSession extends SessionController {
   }
 
   public override dispose(): void {
+    if (this.diagnosticsReceiver) {
+      this.diagnosticsReceiver.dispose();
+      this.diagnosticsReceiver = null;
+    }
+    if (this.commentsManager) {
+      this.commentsManager.dispose();
+      this.commentsManager = null;
+    }
     if (this.followController) {
       this.followController.dispose();
       this.followController = null;

@@ -40,6 +40,15 @@
         {
           "id": "colive.participants",
           "name": "Participants"
+        },
+        {
+          "id": "colive.comments",
+          "name": "Comments"
+        },
+        {
+          "type": "webview",
+          "id": "colive.chatView",
+          "name": "Chat"
         }
       ]
     },
@@ -93,6 +102,16 @@
       {
         "command": "colive.stopFollowing",
         "title": "CoLive: Stop Following",
+        "category": "CoLive"
+      },
+      {
+        "command": "colive.exportComments",
+        "title": "CoLive: Export Comments",
+        "category": "CoLive"
+      },
+      {
+        "command": "colive.importComments",
+        "title": "CoLive: Import Comments",
         "category": "CoLive"
       }
     ],

@@ -16,6 +16,8 @@ import { SyncManager } from '../sync/SyncManager.js';
 import { PresenceManager } from '../presence/PresenceManager.js';
 import { RemoteCursorRenderer } from '../presence/RemoteCursorRenderer.js';
 import { FollowController } from '../presence/FollowController.js';
+import { CommentsManager } from '../comments/CommentsManager.js';
+import { HostDiagnosticsBroadcaster } from '../diagnostics/diagnosticsService.js';
 import { SessionController } from './sessionController.js';
 
 export class HostSession extends SessionController {
@@ -28,6 +30,8 @@ export class HostSession extends SessionController {
   public presenceManager: PresenceManager | null = null;
   public cursorRenderer: RemoteCursorRenderer | null = null;
   public followController: FollowController | null = null;
+  public commentsManager: CommentsManager | null = null;
+  public diagnosticsBroadcaster: HostDiagnosticsBroadcaster | null = null;
   private serverUrl: string;
   private displayName: string;
   private requireApproval: boolean;
@@ -120,6 +124,25 @@ export class HostSession extends SessionController {
       role: 'host',
       workspaceRoot: this.workspaceRoot,
     });
+
+    // Initialize comments manager
+    this.commentsManager = new CommentsManager({
+      connection: this.connection,
+      role: 'host',
+      userId: 'host',
+      userName: this.displayName,
+      userColor: '#E6194B',
+      permission: 'readWrite',
+      syncManager: this.syncManager,
+      workspaceRoot: this.workspaceRoot,
+      allowReadOnlyComments: true,
+    });
+
+    // Initialize diagnostics broadcaster
+    this.diagnosticsBroadcaster = new HostDiagnosticsBroadcaster(
+      this.connection,
+      this.workspaceRoot,
+    );
 
     // Add self as host participant
     const hostParticipant: ParticipantInfo = {
@@ -280,6 +303,14 @@ export class HostSession extends SessionController {
   }
 
   public override dispose(): void {
+    if (this.diagnosticsBroadcaster) {
+      this.diagnosticsBroadcaster.dispose();
+      this.diagnosticsBroadcaster = null;
+    }
+    if (this.commentsManager) {
+      this.commentsManager.dispose();
+      this.commentsManager = null;
+    }
     if (this.followController) {
       this.followController.dispose();
       this.followController = null;
