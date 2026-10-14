@@ -1,0 +1,55 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    name: Package & Release CoLive Extension
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Build All Packages
+        run: npm run build
+
+      - name: Run Tests
+        run: npm test
+
+      - name: Package VSIX
+        run: npm run package -w colive
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: packages/extension/*.vsix
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+
+      - name: Publish to VS Marketplace
+        if: env.VSCE_PAT != ''
+        run: npx @vscode/vsce publish --packagePath packages/extension/*.vsix
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+
+      - name: Publish to Open VSX
+        if: env.OVSX_PAT != ''
+        run: npx ovsx publish packages/extension/*.vsix -p ${{ secrets.OVSX_PAT }}
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}

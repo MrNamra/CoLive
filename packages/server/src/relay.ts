@@ -627,7 +627,8 @@ export class RelayServer {
     if (
       msg.type.startsWith('fs.') ||
       msg.type.endsWith('.req') ||
-      msg.type.endsWith('.res')
+      msg.type.endsWith('.res') ||
+      (msg.type === 'error' && msg.id)
     ) {
       if (client.role === 'host') {
         // Response from Host -> Route to specific guest by request id

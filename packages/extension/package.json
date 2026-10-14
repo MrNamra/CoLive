@@ -113,9 +113,47 @@
         "command": "colive.importComments",
         "title": "CoLive: Import Comments",
         "category": "CoLive"
+      },
+      {
+        "command": "colive.showWalkthrough",
+        "title": "CoLive: Show Walkthrough",
+        "category": "CoLive"
+      },
+      {
+        "command": "colive.showSessionInfo",
+        "title": "CoLive: Show Session Info",
+        "category": "CoLive"
+      },
+      {
+        "command": "colive.copyLineLink",
+        "title": "CoLive: Copy Link to this Line",
+        "category": "CoLive"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "colive.startSession",
+        "key": "ctrl+alt+l s",
+        "mac": "cmd+alt+l s"
+      },
+      {
+        "command": "colive.joinSession",
+        "key": "ctrl+alt+l j",
+        "mac": "cmd+alt+l j"
+      },
+      {
+        "command": "colive.followParticipant",
+        "key": "ctrl+alt+l f",
+        "mac": "cmd+alt+l f"
       }
     ],
     "menus": {
+      "editor/context": [
+        {
+          "command": "colive.copyLineLink",
+          "group": "colive@1"
+        }
+      ],
       "view/item/context": [
         {
           "command": "colive.followParticipant",
@@ -134,6 +172,47 @@
         }
       ]
     },
+    "walkthroughs": [
+      {
+        "id": "colive.welcome",
+        "title": "Get Started with CoLive",
+        "description": "Learn how to collaborate in real-time with CoLive in VS Code, Antigravity, and Cursor.",
+        "steps": [
+          {
+            "id": "colive.step.displayName",
+            "title": "Set Display Name",
+            "description": "Customize your visible name and handle.",
+            "media": {
+              "markdown": "../../docs/walkthrough/1-display-name.md"
+            }
+          },
+          {
+            "id": "colive.step.share",
+            "title": "Share Workspace",
+            "description": "Start a live collaboration session with approval control.",
+            "media": {
+              "markdown": "../../docs/walkthrough/2-share.md"
+            }
+          },
+          {
+            "id": "colive.step.join",
+            "title": "Join Session",
+            "description": "Connect to an existing shared workspace.",
+            "media": {
+              "markdown": "../../docs/walkthrough/3-join.md"
+            }
+          },
+          {
+            "id": "colive.step.collab",
+            "title": "Comments, Follow Mode & Chat",
+            "description": "Communicate and co-edit seamlessly.",
+            "media": {
+              "markdown": "../../docs/walkthrough/4-comments-follow.md"
+            }
+          }
+        ]
+      }
+    ],
     "configuration": {
       "title": "CoLive",
       "properties": {

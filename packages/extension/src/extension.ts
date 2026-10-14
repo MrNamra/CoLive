@@ -258,6 +258,47 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
   );
 
+  context.subscriptions.push(
+    vscode.commands.registerCommand('colive.showWalkthrough', async () => {
+      await vscode.commands.executeCommand('workbench.action.openWalkthrough', 'colive-team.colive#colive.welcome', false);
+    }),
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('colive.showSessionInfo', async () => {
+      if (!activeSession || activeSession.getState() !== 'active') {
+        vscode.window.showInformationMessage('No active CoLive session.');
+        return;
+      }
+
+      const isHost = activeSession instanceof HostSession;
+      const role = isHost ? 'Host' : 'Guest';
+      const participants = activeSession.getParticipants();
+      const pNames = participants.map((p) => `${p.displayName} (${p.role}, ${p.permission})`).join('\n • ');
+
+      const infoText = `CoLive Session Info:\n\n` +
+        `• Role: ${role}\n` +
+        `• Status: ${activeSession.getState()}\n` +
+        `• Active Participants (${participants.length}):\n • ${pNames}\n`;
+
+      await vscode.window.showInformationMessage(infoText, { modal: true });
+    }),
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('colive.copyLineLink', async () => {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) return;
+
+      const line = editor.selection.active.line + 1;
+      const docPath = editor.document.uri.fsPath || editor.document.uri.path;
+      const linkText = `${docPath}:${line}`;
+
+      await vscode.env.clipboard.writeText(linkText);
+      vscode.window.setStatusBarMessage(`CoLive: Copied link to line ${line}`, 3000);
+    }),
+  );
+
   Logger.info('CoLive extension activated successfully.');
 }
 

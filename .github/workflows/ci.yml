@@ -8,7 +8,7 @@ on:
 
 jobs:
   test:
-    name: Build, Lint & Test
+    name: Build, Lint, Test & Package
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -29,5 +29,8 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      - name: Run Tests
+      - name: Run Unit & Integration Tests
         run: npm test
+
+      - name: Verify VSIX Package Generation
+        run: npm run package -w colive
