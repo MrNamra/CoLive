@@ -340,6 +340,29 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
   );
 
+  context.subscriptions.push(
+    vscode.commands.registerCommand('colive.setTunnelUrl', async () => {
+      const input = await vscode.window.showInputBox({
+        prompt: 'Enter Cloudflare Tunnel URL (e.g. https://xxx.trycloudflare.com or wss://xxx.trycloudflare.com/ws)',
+        placeHolder: 'https://xxxx.trycloudflare.com',
+      });
+      if (!input || !input.trim()) return;
+
+      let wsUrl = input.trim();
+      if (wsUrl.startsWith('https://')) {
+        wsUrl = wsUrl.replace('https://', 'wss://');
+      } else if (wsUrl.startsWith('http://')) {
+        wsUrl = wsUrl.replace('http://', 'ws://');
+      }
+      if (!wsUrl.endsWith('/ws')) {
+        wsUrl = wsUrl.replace(/\/+$/, '') + '/ws';
+      }
+
+      await vscode.workspace.getConfiguration('colive').update('serverUrl', wsUrl, vscode.ConfigurationTarget.Global);
+      vscode.window.showInformationMessage(`CoLive: Worldwide Cloudflare server URL configured to: ${wsUrl}`);
+    }),
+  );
+
   Logger.info('CoLive extension activated successfully.');
 }
 

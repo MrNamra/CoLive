@@ -16,7 +16,29 @@ The relay holds no persistent disk state. Memory and CPU overhead scale predicta
 
 ---
 
-## 1. Deploying to Fly.io (Recommended)
+## 0. Worldwide Collaboration via Cloudflare Tunnel (Zero-Config, Free, Instant)
+
+If you want teammates anywhere in the world to connect to your local relay server without port forwarding, opening firewall ports, or buying a domain, use **Cloudflare Tunnel (TryCloudflare)**:
+
+### Quick Run
+```bash
+# Run from repository root:
+npm run tunnel
+
+# Or execute script directly:
+./scripts/tunnel.sh
+```
+
+### What This Does:
+1. Automatically starts your local relay server on `http://127.0.0.1:8787` (if not already running).
+2. Spawns `cloudflared tunnel --url http://127.0.0.1:8787`.
+3. Cloudflare allocates a global HTTPS/WSS endpoint (e.g. `https://xxxx.trycloudflare.com` and `wss://xxxx.trycloudflare.com/ws`).
+4. Automatically writes the public endpoint to `.tunnel-url` so the CoLive extension discovers it automatically!
+5. Teammates anywhere in the world can connect simply by setting `colive.serverUrl` to `wss://xxxx.trycloudflare.com/ws` or running Command: **`CoLive: Set Cloudflare Tunnel URL`**.
+
+---
+
+## 1. Deploying to Fly.io (Dedicated Production)
 
 Fly.io provides low-latency edge deployment with automatic TLS termination and WebSocket support.
 

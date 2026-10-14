@@ -15,6 +15,9 @@
     "clean": "npm run clean --workspaces --if-present && rm -rf dist out coverage .vscode-test",
     "dev:server": "npm run dev -w @colive/server",
     "dev:extension": "npm run watch -w colive",
+    "tunnel": "./scripts/tunnel.sh",
+    "dev:tunnel": "./scripts/tunnel.sh",
+    "package:extension": "npm run package -w colive",
     "format": "prettier --write \"**/*.{ts,js,json,md}\"",
     "format:check": "prettier --check \"**/*.{ts,js,json,md}\""
   },

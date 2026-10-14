@@ -1,5 +1,7 @@
 import * as vscode from 'vscode';
 import os from 'node:os';
+import fs from 'node:fs';
+import path from 'node:path';
 import { Permission } from '@colive/protocol';
 
 export interface ExtensionConfig {
@@ -16,8 +18,28 @@ export interface ExtensionConfig {
 
 export function getExtensionConfig(): ExtensionConfig {
   const cfg = vscode.workspace.getConfiguration('colive');
+  let serverUrl = cfg.get<string>('serverUrl', 'ws://localhost:8787/ws');
+
+  // Auto-discover local Cloudflare .tunnel-url if configured to default localhost
+  if (serverUrl === 'ws://localhost:8787/ws' && vscode.workspace.workspaceFolders) {
+    for (const folder of vscode.workspace.workspaceFolders) {
+      const tunnelFilePath = path.join(folder.uri.fsPath, '.tunnel-url');
+      if (fs.existsSync(tunnelFilePath)) {
+        try {
+          const content = fs.readFileSync(tunnelFilePath, 'utf8').trim();
+          if (content.startsWith('ws://') || content.startsWith('wss://')) {
+            serverUrl = content;
+            break;
+          }
+        } catch {
+          // ignore
+        }
+      }
+    }
+  }
+
   return {
-    serverUrl: cfg.get<string>('serverUrl', 'ws://localhost:8787/ws'),
+    serverUrl,
     displayName: cfg.get<string>('displayName', ''),
     excludePatterns: cfg.get<string[]>('excludePatterns', [
       '.git/**',

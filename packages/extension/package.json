@@ -138,6 +138,11 @@
         "command": "colive.toggleTerminalWrite",
         "title": "CoLive: Toggle Terminal Guest Permissions",
         "category": "CoLive"
+      },
+      {
+        "command": "colive.setTunnelUrl",
+        "title": "CoLive: Set Cloudflare Tunnel URL",
+        "category": "CoLive"
       }
     ],
     "keybindings": [
