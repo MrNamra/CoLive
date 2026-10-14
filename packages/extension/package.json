@@ -88,6 +88,12 @@
         "icon": "$(output)"
       },
       {
+        "command": "colive.installDependencies",
+        "title": "CoLive: Install Dependencies (cloudflared)",
+        "category": "CoLive",
+        "icon": "$(cloud-download)"
+      },
+      {
         "command": "colive.copyInvite",
         "title": "CoLive: Copy Invite Link",
         "category": "CoLive"

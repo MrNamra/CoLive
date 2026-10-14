@@ -105,6 +105,7 @@ export class ConnectionManager {
         const msg = err instanceof Error ? err.message : String(err);
         const isCloudflareEdgePropagating =
           msg.includes('530') ||
+          msg.includes('520') ||
           msg.includes('502') ||
           msg.includes('503') ||
           msg.includes('ENOTFOUND') ||
@@ -118,9 +119,9 @@ export class ConnectionManager {
           continue;
         }
 
-        if (msg.includes('530')) {
+        if (msg.includes('530') || msg.includes('520') || msg.includes('502')) {
           throw new Error(
-            `Cloudflare Tunnel is not yet ready or the session has ended (HTTP 530). If the host just started the session, please try again in a few moments.`,
+            `Cloudflare Tunnel is unreachable (HTTP ${msg.includes('520') ? '520' : '530'}). The host session may have ended or the tunnel is still establishing. Please verify the invite link or ask the host to re-share.`,
           );
         }
 

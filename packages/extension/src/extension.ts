@@ -11,6 +11,11 @@ import { StatusBarManager } from './ui/statusBar.js';
 import { ChatViewProvider } from './chat/chatViewProvider.js';
 import { CommentsTreeProvider } from './comments/commentsTree.js';
 import { TunnelManager } from './tunnel/TunnelManager.js';
+import {
+  getOsInstallCommand,
+  promptOrInstallDependencies,
+  formatFriendlyErrorMessage,
+} from './dependencies.js';
 
 let activeSession: SessionController | null = null;
 let statusBar: StatusBarManager | null = null;
@@ -33,6 +38,13 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.commands.registerCommand('colive.showLogs', () => {
       Logger.show();
+    }),
+  );
+  context.subscriptions.push(
+    vscode.commands.registerCommand('colive.installDependencies', async () => {
+      if (tunnelManager) {
+        await promptOrInstallDependencies(tunnelManager, true);
+      }
     }),
   );
 
@@ -443,25 +455,40 @@ async function startHostSession(): Promise<void> {
             progress.report({ message: 'Connected to Cloudflare worldwide edge!' });
             Logger.info(`Worldwide Cloudflare tunnel online: ${publicServerUrl}`);
           } else {
-            Logger.warn('Cloudflare tunnel helper (cloudflared) not available. Falling back to local relay.');
+            const osInfo = getOsInstallCommand();
+            Logger.warn(`Cloudflare tunnel helper (cloudflared) not available on ${osInfo.platformName}. Falling back to local relay.`);
             vscode.window
               .showInformationMessage(
-                'CoLive: Session is running locally on 127.0.0.1:8787. To share worldwide, install cloudflared or use "CoLive: Set Cloudflare Tunnel URL".',
+                `CoLive: Session is running locally on 127.0.0.1:8787. To share worldwide, install cloudflared for ${osInfo.platformName}.`,
+                'Auto-Install Dependencies',
+                'Copy Terminal Command',
                 'Show Logs',
               )
-              .then((choice) => {
+              .then(async (choice) => {
                 if (choice === 'Show Logs') Logger.show();
+                if (choice === 'Copy Terminal Command') {
+                  await vscode.env.clipboard.writeText(osInfo.command);
+                  vscode.window.showInformationMessage(`Copied command for ${osInfo.platformName} to clipboard!`);
+                }
+                if (choice === 'Auto-Install Dependencies' && tunnelManager) {
+                  await promptOrInstallDependencies(tunnelManager, true);
+                }
               });
           }
         } catch (err) {
+          const friendlyError = formatFriendlyErrorMessage(err);
           Logger.warn('Failed to start Cloudflare tunnel, falling back to local relay', err);
           vscode.window
             .showWarningMessage(
-              `Cloudflare tunnel could not be started: ${err instanceof Error ? err.message : String(err)}. Falling back to local relay server.`,
+              `Cloudflare tunnel notice: ${friendlyError}. Session is continuing on local relay server.`,
+              'Auto-Install Dependencies',
               'Show Logs',
             )
-            .then((choice) => {
+            .then(async (choice) => {
               if (choice === 'Show Logs') Logger.show();
+              if (choice === 'Auto-Install Dependencies' && tunnelManager) {
+                await promptOrInstallDependencies(tunnelManager, true);
+              }
             });
         }
       },
@@ -497,13 +524,18 @@ async function startHostSession(): Promise<void> {
     chatProvider?.setSession(hostSession.connection, 'host', displayName);
   } catch (err) {
     Logger.error('Failed to start host session', err);
+    const friendlyError = formatFriendlyErrorMessage(err, hostLocalServerUrl);
     vscode.window
       .showErrorMessage(
-        `Failed to start CoLive session: ${err instanceof Error ? err.message : String(err)}`,
+        `Failed to start CoLive session: ${friendlyError}`,
+        'Install Dependencies',
         'Show Logs',
       )
-      .then((choice) => {
+      .then(async (choice) => {
         if (choice === 'Show Logs') Logger.show();
+        if (choice === 'Install Dependencies' && tunnelManager) {
+          await promptOrInstallDependencies(tunnelManager, true);
+        }
       });
     if (activeSession) {
       activeSession.dispose();
@@ -564,9 +596,10 @@ async function joinSessionByIdAndSecret(
     chatProvider?.setSession(guestSession.connection, guestSession.guestId, displayName);
   } catch (err) {
     Logger.error('Failed to join session', err);
+    const friendlyError = formatFriendlyErrorMessage(err, targetServerUrl);
     vscode.window
       .showErrorMessage(
-        `Failed to join CoLive session (${targetServerUrl}): ${err instanceof Error ? err.message : String(err)}`,
+        `Failed to join CoLive session: ${friendlyError}`,
         'Show Logs',
       )
       .then((choice) => {
