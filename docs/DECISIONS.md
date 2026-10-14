@@ -27,3 +27,8 @@ This document records architectural, protocol, and design decisions made during 
 ## 5. End-to-End Encryption (E2EE)
 - **Decision**: Invite secrets are never sent to the server in plaintext. The relay receives only the SHA-256 hash or `authKey` derived via HKDF. Content payloads (Yjs binary frames, file contents, chat) are encrypted with an `encKey` derived via HKDF using AES-GCM (WebCrypto).
 - **Rationale**: Zero-trust architecture ensures relay operators or compromised servers cannot inspect source code, file contents, or chat messages.
+
+## 6. Message Envelope vs Payload Properties (`fs.stat.res`)
+- **Decision**: In `fs.stat.res`, the file's entry type is named `fileType` (`file` | `dir` | `symlink`) while the outer envelope retains `type: "fs.stat.res"`.
+- **Rationale**: Prevents TypeScript and JSON property shadowing collisions on the top-level message object.
+
