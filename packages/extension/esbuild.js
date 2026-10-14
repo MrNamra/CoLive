@@ -7,7 +7,7 @@ const isWatch = process.argv.includes('--watch');
 const buildOptions = {
   entryPoints: ['src/extension.ts'],
   bundle: true,
-  outfile: 'dist/extension.js',
+  outfile: 'dist/extension.cjs',
   external: ['vscode', 'bufferutil', 'utf-8-validate'],
   format: 'cjs',
   platform: 'node',

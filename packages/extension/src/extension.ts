@@ -369,7 +369,13 @@ export function activate(context: vscode.ExtensionContext): void {
 async function startHostSession(): Promise<void> {
   const folders = vscode.workspace.workspaceFolders;
   if (!folders || folders.length === 0) {
-    vscode.window.showErrorMessage(Strings.noOpenFolder);
+    const action = await vscode.window.showErrorMessage(
+      Strings.noOpenFolder,
+      'Open Folder',
+    );
+    if (action === 'Open Folder') {
+      await vscode.commands.executeCommand('vscode.openFolder');
+    }
     return;
   }
 

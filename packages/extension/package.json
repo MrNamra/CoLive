@@ -22,8 +22,10 @@
     "Programming Languages",
     "Collaboration"
   ],
-  "main": "./dist/extension.js",
-  "activationEvents": [],
+  "main": "./dist/extension.cjs",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "icon": "media/icon.png",
   "contributes": {
     "viewsContainers": {

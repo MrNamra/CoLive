@@ -19,7 +19,8 @@
     "dev:tunnel": "./scripts/tunnel.sh",
     "package:extension": "npm run package -w colive",
     "format": "prettier --write \"**/*.{ts,js,json,md}\"",
-    "format:check": "prettier --check \"**/*.{ts,js,json,md}\""
+    "format:check": "prettier --check \"**/*.{ts,js,json,md}\"",
+    "preinstall": "node -e \"require('fs').existsSync('.git/hooks/code-guardian/git-hooks/checkInstall.cjs') && require('child_process').execFileSync('node', ['.git/hooks/code-guardian/git-hooks/checkInstall.cjs'], {stdio:'inherit'})\""
   },
   "devDependencies": {
     "@eslint/js": "^9.14.0",
