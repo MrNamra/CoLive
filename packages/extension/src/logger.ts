@@ -35,8 +35,11 @@ export class Logger {
     Logger.channel.appendLine(`[${timestamp}] [${level}] ${message}${meta}`);
   }
 
-  public static show(): void {
-    Logger.channel?.show();
+  public static show(preserveFocus = false): void {
+    if (!Logger.channel) {
+      Logger.channel = vscode.window.createOutputChannel('CoLive');
+    }
+    Logger.channel.show(preserveFocus);
   }
 
   public static dispose(): void {

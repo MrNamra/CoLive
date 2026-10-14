@@ -378,6 +378,9 @@ export function activate(context: vscode.ExtensionContext): void {
 }
 
 async function startHostSession(): Promise<void> {
+  Logger.show(true);
+  Logger.info('--- Starting CoLive Host Session ---');
+
   const folders = vscode.workspace.workspaceFolders;
   if (!folders || folders.length === 0) {
     const action = await vscode.window.showErrorMessage(
@@ -541,9 +544,13 @@ async function joinSessionByIdAndSecret(
   secret: string,
   serverUrl?: string,
 ): Promise<void> {
+  Logger.show(true);
+  Logger.info(`--- Starting CoLive Guest Join (Session ID: ${sessionId}) ---`);
+
   const config = getExtensionConfig();
   const targetServerUrl = serverUrl || config.serverUrl;
   const displayName = await resolveDisplayName();
+  Logger.info(`Guest target relay URL: ${targetServerUrl}, display name: ${displayName}`);
 
   const guestSession = new GuestSession(targetServerUrl, sessionId, secret, displayName);
   try {

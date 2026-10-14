@@ -67,6 +67,7 @@ export class StatusBarManager implements vscode.Disposable {
         [
           { label: '$(broadcast) Share Workspace', description: 'Host a real-time collaboration session', action: 'share' },
           { label: '$(sign-in) Join Session', description: 'Join an existing session via link or code', action: 'join' },
+          { label: '$(output) Show Output Logs', description: 'View backend relay & tunnel process logs', action: 'showLogs' },
         ],
         { placeHolder: 'CoLive Collaboration' },
       );
@@ -75,6 +76,8 @@ export class StatusBarManager implements vscode.Disposable {
         vscode.commands.executeCommand('colive.startSession');
       } else if (choice?.action === 'join') {
         vscode.commands.executeCommand('colive.joinSession');
+      } else if (choice?.action === 'showLogs') {
+        vscode.commands.executeCommand('colive.showLogs');
       }
       return;
     }
@@ -82,6 +85,7 @@ export class StatusBarManager implements vscode.Disposable {
     const actions = [
       { label: '$(clippy) Copy Invite Link', action: 'copyInvite' },
       { label: '$(organization) Show Participants', action: 'showParticipants' },
+      { label: '$(output) Show Output Logs', action: 'showLogs' },
       { label: '$(circle-slash) End / Leave Session', action: 'endSession' },
     ];
 
@@ -90,6 +94,8 @@ export class StatusBarManager implements vscode.Disposable {
       this.currentSession.copyInvite();
     } else if (pick?.action === 'showParticipants') {
       vscode.commands.executeCommand('colive.participants.focus');
+    } else if (pick?.action === 'showLogs') {
+      vscode.commands.executeCommand('colive.showLogs');
     } else if (pick?.action === 'endSession') {
       vscode.commands.executeCommand('colive.endSession');
     }

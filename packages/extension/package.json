@@ -57,7 +57,7 @@
     "viewsWelcome": [
       {
         "view": "colive.participants",
-        "contents": "Share your workspace or join an active session to collaborate in real-time.\n[Share Workspace](command:colive.startSession)\n[Join Session](command:colive.joinSession)"
+        "contents": "Share your workspace or join an active session to collaborate in real-time.\n[Share Workspace](command:colive.startSession)\n[Join Session](command:colive.joinSession)\n\n[Show Process & Output Logs](command:colive.showLogs)"
       }
     ],
     "commands": [
@@ -84,7 +84,8 @@
       {
         "command": "colive.showLogs",
         "title": "CoLive: Show Output Logs",
-        "category": "CoLive"
+        "category": "CoLive",
+        "icon": "$(output)"
       },
       {
         "command": "colive.copyInvite",
@@ -175,6 +176,13 @@
       }
     ],
     "menus": {
+      "view/title": [
+        {
+          "command": "colive.showLogs",
+          "when": "view == colive.participants",
+          "group": "navigation"
+        }
+      ],
       "editor/context": [
         {
           "command": "colive.copyLineLink",
