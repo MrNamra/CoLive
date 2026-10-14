@@ -97,7 +97,7 @@ export class ParticipantsTreeProvider implements vscode.TreeDataProvider<Partici
       return Promise.resolve([]);
     }
 
-    const participants = this.currentSession.getParticipants();
+    const participants = this.currentSession.getParticipants().filter((p) => p.status === 'active');
     // Sort host first, then guests alphabetically
     participants.sort((a, b) => {
       if (a.role === 'host') return -1;

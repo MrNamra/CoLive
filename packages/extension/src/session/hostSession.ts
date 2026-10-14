@@ -205,7 +205,7 @@ export class HostSession extends SessionController {
     if (msg.type === 'server.participantLeft') {
       const p = this.participantsMap.get(msg.participantId);
       if (p) {
-        p.status = 'idle';
+        this.participantsMap.delete(msg.participantId);
         this._onDidChangeParticipants.fire(this.getParticipants());
         vscode.window.setStatusBarMessage(`CoLive: ${p.displayName} left the session`, 4000);
       }

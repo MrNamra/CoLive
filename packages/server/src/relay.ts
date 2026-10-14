@@ -875,7 +875,8 @@ export class RelayServer {
     if (client.participantId) {
       const p = session.participants.get(client.participantId);
       if (p) {
-        p.status = 'idle';
+        session.participants.delete(client.participantId);
+        session.participantToClient.delete(client.participantId);
         this.broadcastToSession(session, {
           v: PROTOCOL_VERSION,
           type: 'server.participantLeft',

@@ -133,6 +133,7 @@ export class GuestSession extends SessionController {
             this.permission === 'readOnly',
             (relPath) => !!this.syncManager?.getYText(relPath),
           );
+          const folderName = this.hostInfo ? `CoLive: ${this.hostInfo.displayName}` : 'CoLive: Shared';
           try {
             this.fsRegistration = vscode.workspace.registerFileSystemProvider(
               CoLiveFileSystemProvider.SCHEME,
@@ -140,7 +141,6 @@ export class GuestSession extends SessionController {
               { isCaseSensitive: true, isReadonly: this.permission === 'readOnly' },
             );
 
-            const folderName = this.hostInfo ? `CoLive: ${this.hostInfo.displayName}` : 'CoLive: Shared';
             const rootUri = vscode.Uri.parse(`colive:/${encodeURIComponent(folderName)}`);
             this.mountedFolderUri = rootUri;
 
@@ -226,7 +226,7 @@ export class GuestSession extends SessionController {
     if (msg.type === 'server.participantLeft') {
       const p = this.participantsMap.get(msg.participantId);
       if (p) {
-        p.status = 'idle';
+        this.participantsMap.delete(msg.participantId);
         this._onDidChangeParticipants.fire(this.getParticipants());
         vscode.window.setStatusBarMessage(`CoLive: ${p.displayName} left the session`, 4000);
       }
