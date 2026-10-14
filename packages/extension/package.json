@@ -1,0 +1,94 @@
+{
+  "name": "colive",
+  "displayName": "CoLive - Real-time Collaboration",
+  "description": "Real-time collaborative editing, cursors, comments, and follow mode",
+  "version": "0.1.0",
+  "type": "module",
+  "publisher": "colive-team",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/colive/colive.git"
+  },
+  "bugs": {
+    "url": "https://github.com/colive/colive/issues"
+  },
+  "homepage": "https://github.com/colive/colive#readme",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other",
+    "Programming Languages",
+    "Collaboration"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [],
+  "icon": "media/icon.png",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "colive",
+          "title": "CoLive",
+          "icon": "$(broadcast)"
+        }
+      ]
+    },
+    "views": {
+      "colive": [
+        {
+          "id": "colive.participants",
+          "name": "Participants"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "colive.participants",
+        "contents": "Share your workspace or join an active session to collaborate in real-time.\n[Share Workspace](command:colive.startSession)\n[Join Session](command:colive.joinSession)"
+      }
+    ],
+    "commands": [
+      {
+        "command": "colive.hello",
+        "title": "CoLive: Hello",
+        "category": "CoLive"
+      },
+      {
+        "command": "colive.startSession",
+        "title": "CoLive: Share Workspace",
+        "category": "CoLive"
+      },
+      {
+        "command": "colive.joinSession",
+        "title": "CoLive: Join Session",
+        "category": "CoLive"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run build",
+    "build": "node esbuild.js --production",
+    "watch": "node esbuild.js --watch",
+    "clean": "rm -rf dist",
+    "package": "vsce package --no-dependencies",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@colive/protocol": "*",
+    "fast-diff": "^1.3.0",
+    "ws": "^8.18.0",
+    "y-protocols": "^1.0.6",
+    "yjs": "^13.6.20"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.6",
+    "@types/vscode": "^1.90.0",
+    "@types/ws": "^8.5.13",
+    "@vscode/vsce": "^3.2.1",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.4"
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "name": "@colive/e2e",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Headless end-to-end tests for CoLive",
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@colive/protocol": "*",
+    "@colive/server": "*",
+    "fast-diff": "^1.3.0",
+    "ws": "^8.18.0",
+    "y-protocols": "^1.0.6",
+    "yjs": "^13.6.20"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.6",
+    "@types/ws": "^8.5.13",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.4"
+  }
+}

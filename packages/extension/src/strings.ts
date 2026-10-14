@@ -1,0 +1,33 @@
+/**
+ * Centralized user-facing strings for CoLive extension.
+ */
+export const Strings = {
+  extensionName: 'CoLive',
+  helloMessage: 'Hello from CoLive! Ready for real-time collaboration.',
+  shareWorkspaceTitle: 'Share Workspace',
+  joinSessionTitle: 'Join Session',
+  noOpenFolder: 'Please open a folder or workspace before starting a CoLive session.',
+  sessionStarted: 'CoLive session started! Invite link copied to clipboard.',
+  copyLink: 'Copy Link',
+  copyCode: 'Copy Code',
+  showParticipants: 'Show Participants',
+  waitingApproval: 'Waiting for host approval...',
+  joinApproved: 'Joined CoLive session successfully.',
+  joinRejected: 'Join request was declined by the host.',
+  sessionEnded: 'CoLive session has ended.',
+  connecting: 'Connecting to CoLive relay server...',
+  reconnecting: 'Reconnecting to CoLive session...',
+  readOnlyBadge: 'Read-only',
+  unresolvedComments: 'unresolved comments',
+  savedByHost: 'Saved by host automatically.',
+  binaryFilePlaceholder: 'Binary file — open on host machine.',
+  confirmEndSession: 'Are you sure you want to end this CoLive session for all participants?',
+  confirmLeaveSession: 'Are you sure you want to leave this CoLive session?',
+  endSessionButton: 'End Session',
+  leaveSessionButton: 'Leave Session',
+  cancel: 'Cancel',
+  acceptReadWrite: 'Accept (Read & Write)',
+  acceptReadOnly: 'Accept (Read-only)',
+  decline: 'Decline',
+  untrustedHostWarning: 'You are opening a remote workspace from an untrusted host. Code execution tasks are disabled.',
+};

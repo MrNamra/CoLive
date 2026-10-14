@@ -1,0 +1,8 @@
+node_modules
+dist
+out
+build
+*.vsix
+.vscode-test
+.dev
+coverage

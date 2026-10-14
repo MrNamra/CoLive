@@ -1,0 +1,28 @@
+{
+  "name": "@colive/server",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "WebSocket relay server for CoLive",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist",
+    "start": "node dist/index.js",
+    "dev": "node --watch src/index.ts",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@colive/protocol": "*",
+    "pino": "^9.5.0",
+    "ws": "^8.18.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.6",
+    "@types/ws": "^8.5.13",
+    "pino-pretty": "^13.0.0",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.4"
+  }
+}
