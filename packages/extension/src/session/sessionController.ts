@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { ParticipantInfo, Permission } from '@colive/protocol';
+import { ParticipantInfo } from '@colive/protocol';
 import { ConnectionManager } from '../connection.js';
 import { SessionLifecycleState, SessionStateChangeEvent } from './sessionState.js';
 

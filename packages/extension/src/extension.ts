@@ -168,7 +168,15 @@ async function startHostSession(): Promise<void> {
   const displayName = await resolveDisplayName();
 
   try {
-    const hostSession = new HostSession(config.serverUrl, displayName, config.requireJoinApproval);
+    const rootPath = folders[0]!.uri.fsPath;
+    const hostSession = new HostSession(
+      config.serverUrl,
+      displayName,
+      rootPath,
+      config.excludePatterns,
+      config.maxFileSizeMB,
+      config.requireJoinApproval,
+    );
     activeSession = hostSession;
     statusBar?.setSession(hostSession);
     participantsTree?.setSession(hostSession);

@@ -27,7 +27,7 @@ export class ConnectionManager {
   private reconnectAttempt = 0;
   private reconnectTimer: NodeJS.Timeout | null = null;
   private outgoingQueue: Array<string | Uint8Array> = [];
-  private pendingRpcs: Map<string, { resolve: (val: any) => void; reject: (err: Error) => void; timer: NodeJS.Timeout }> = new Map();
+  private pendingRpcs: Map<string, { resolve: (val: ColiveMessage) => void; reject: (err: Error) => void; timer: NodeJS.Timeout }> = new Map();
   private listeners: { [K in keyof ConnectionEvents]?: Set<ConnectionEvents[K]> } = {};
   private intentionallyClosed = false;
 
@@ -118,7 +118,7 @@ export class ConnectionManager {
             ? data
             : Array.isArray(data)
               ? Buffer.concat(data)
-              : Buffer.from(data as any);
+              : Buffer.from(data as ArrayBuffer);
           this.emit('binary', new Uint8Array(buffer));
           return;
         }

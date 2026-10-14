@@ -12,6 +12,7 @@ import { ConnectionManager } from '../connection.js';
 import { buildPasteCode } from '../invite.js';
 import { Logger } from '../logger.js';
 import { Strings } from '../strings.js';
+import { CoLiveFileSystemProvider } from '../guest/coliveFileSystem.js';
 import { SessionController } from './sessionController.js';
 
 export class GuestSession extends SessionController {
@@ -21,6 +22,9 @@ export class GuestSession extends SessionController {
   public guestToken = '';
   public permission: Permission = 'readWrite';
   public hostInfo: ParticipantInfo | null = null;
+  public fsProvider: CoLiveFileSystemProvider | null = null;
+  private fsRegistration: vscode.Disposable | null = null;
+  private mountedFolderUri: vscode.Uri | null = null;
   private serverUrl: string;
   private displayName: string;
 
@@ -102,6 +106,25 @@ export class GuestSession extends SessionController {
             status: 'active',
           });
 
+          // Register Virtual File System Provider
+          this.fsProvider = new CoLiveFileSystemProvider(this.connection!, this.permission === 'readOnly');
+          try {
+            this.fsRegistration = vscode.workspace.registerFileSystemProvider(
+              CoLiveFileSystemProvider.SCHEME,
+              this.fsProvider,
+              { isCaseSensitive: true, isReadonly: this.permission === 'readOnly' },
+            );
+
+            const folderName = this.hostInfo ? `CoLive: ${this.hostInfo.displayName}` : 'CoLive: Shared';
+            const rootUri = vscode.Uri.parse(`colive:/${encodeURIComponent(folderName)}`);
+            this.mountedFolderUri = rootUri;
+
+            const existingFolders = vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders.length : 0;
+            vscode.workspace.updateWorkspaceFolders(existingFolders, 0, { uri: rootUri, name: folderName });
+          } catch (fsErr) {
+            Logger.warn('Virtual FileSystemProvider registration note', { fsErr });
+          }
+
           this.setState('active');
           this._onDidChangeParticipants.fire(this.getParticipants());
           vscode.window.showInformationMessage(Strings.joinApproved);
@@ -168,5 +191,29 @@ export class GuestSession extends SessionController {
   public async endSession(): Promise<void> {
     this.setState('ended', 'Left session');
     this.dispose();
+  }
+
+  public override dispose(): void {
+    if (this.mountedFolderUri && vscode.workspace.workspaceFolders) {
+      const idx = vscode.workspace.workspaceFolders.findIndex(
+        (f) => f.uri.toString() === this.mountedFolderUri!.toString(),
+      );
+      if (idx >= 0) {
+        vscode.workspace.updateWorkspaceFolders(idx, 1);
+      }
+      this.mountedFolderUri = null;
+    }
+
+    if (this.fsRegistration) {
+      this.fsRegistration.dispose();
+      this.fsRegistration = null;
+    }
+
+    if (this.fsProvider) {
+      this.fsProvider.dispose();
+      this.fsProvider = null;
+    }
+
+    super.dispose();
   }
 }

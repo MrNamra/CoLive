@@ -11,6 +11,7 @@ import { ConnectionManager } from '../connection.js';
 import { buildDeepLink, buildPasteCode } from '../invite.js';
 import { Logger } from '../logger.js';
 import { Strings } from '../strings.js';
+import { HostFileService } from '../host/fileService.js';
 import { SessionController } from './sessionController.js';
 
 export class HostSession extends SessionController {
@@ -18,14 +19,28 @@ export class HostSession extends SessionController {
   public hostToken = '';
   public inviteSecret = '';
   public expiresAt = 0;
+  public fileService: HostFileService | null = null;
   private serverUrl: string;
   private displayName: string;
   private requireApproval: boolean;
+  private workspaceRoot: string;
+  private excludePatterns: string[];
+  private maxFileSizeMB: number;
 
-  constructor(serverUrl: string, displayName: string, requireApproval = true) {
+  constructor(
+    serverUrl: string,
+    displayName: string,
+    workspaceRoot: string,
+    excludePatterns: string[] = [],
+    maxFileSizeMB = 5,
+    requireApproval = true,
+  ) {
     super();
     this.serverUrl = serverUrl;
     this.displayName = displayName;
+    this.workspaceRoot = workspaceRoot;
+    this.excludePatterns = excludePatterns;
+    this.maxFileSizeMB = maxFileSizeMB;
     this.requireApproval = requireApproval;
   }
 
@@ -63,6 +78,10 @@ export class HostSession extends SessionController {
     this.hostToken = res.hostToken;
     this.inviteSecret = res.inviteSecret;
     this.expiresAt = res.expiresAt;
+
+    // Initialize host file service
+    this.fileService = new HostFileService(this.workspaceRoot, this.excludePatterns, this.maxFileSizeMB);
+    this.fileService.setConnection(this.connection);
 
     // Add self as host participant
     const hostParticipant: ParticipantInfo = {
@@ -220,5 +239,13 @@ export class HostSession extends SessionController {
     }
     this.setState('ended', 'Host ended session');
     this.dispose();
+  }
+
+  public override dispose(): void {
+    if (this.fileService) {
+      this.fileService.dispose();
+      this.fileService = null;
+    }
+    super.dispose();
   }
 }
