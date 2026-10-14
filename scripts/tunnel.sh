@@ -13,6 +13,7 @@ TUNNEL_LOG="/tmp/colive-cloudflared-$$.log"
 TUNNEL_URL_FILE="$WORKSPACE_ROOT/.tunnel-url"
 
 cleanup() {
+  trap - SIGINT SIGTERM EXIT
   echo -e "\n\033[1;33m[CoLive] Shutting down Cloudflare Tunnel and Relay...\033[0m"
   if [ -n "$CLOUDFLARED_PID" ] && kill -0 "$CLOUDFLARED_PID" 2>/dev/null; then
     kill "$CLOUDFLARED_PID" 2>/dev/null || true
@@ -21,7 +22,6 @@ cleanup() {
     kill "$SERVER_PID" 2>/dev/null || true
   fi
   rm -f "$TUNNEL_LOG" "$TUNNEL_URL_FILE"
-  exit 0
 }
 
 trap cleanup SIGINT SIGTERM EXIT
