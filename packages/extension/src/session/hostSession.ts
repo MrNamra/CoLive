@@ -35,6 +35,7 @@ export class HostSession extends SessionController {
   public diagnosticsBroadcaster: HostDiagnosticsBroadcaster | null = null;
   public terminalService: HostTerminalService | null = null;
   private serverUrl: string;
+  private publicServerUrl?: string;
   private displayName: string;
   private requireApproval: boolean;
   private workspaceRoot: string;
@@ -48,9 +49,11 @@ export class HostSession extends SessionController {
     excludePatterns: string[] = [],
     maxFileSizeMB = 5,
     requireApproval = true,
+    publicServerUrl?: string,
   ) {
     super();
     this.serverUrl = serverUrl;
+    this.publicServerUrl = publicServerUrl;
     this.displayName = displayName;
     this.workspaceRoot = workspaceRoot;
     this.excludePatterns = excludePatterns;
@@ -166,8 +169,9 @@ export class HostSession extends SessionController {
     this._onDidChangeParticipants.fire(this.getParticipants());
 
     // Copy deep link or paste code to clipboard by default
-    const deepLink = buildDeepLink(this.sessionId, this.inviteSecret, this.serverUrl);
-    const pasteCode = buildPasteCode(this.sessionId, this.inviteSecret, this.serverUrl);
+    const inviteServer = this.publicServerUrl || this.serverUrl;
+    const deepLink = buildDeepLink(this.sessionId, this.inviteSecret, inviteServer);
+    const pasteCode = buildPasteCode(this.sessionId, this.inviteSecret, inviteServer);
     await vscode.env.clipboard.writeText(deepLink);
 
     vscode.window
@@ -294,7 +298,8 @@ export class HostSession extends SessionController {
   }
 
   public async copyInvite(): Promise<void> {
-    const deepLink = buildDeepLink(this.sessionId, this.inviteSecret, this.serverUrl);
+    const inviteServer = this.publicServerUrl || this.serverUrl;
+    const deepLink = buildDeepLink(this.sessionId, this.inviteSecret, inviteServer);
     await vscode.env.clipboard.writeText(deepLink);
     vscode.window.showInformationMessage('CoLive: Worldwide invite link copied to clipboard.');
   }

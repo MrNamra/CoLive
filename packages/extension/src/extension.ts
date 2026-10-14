@@ -391,11 +391,12 @@ async function startHostSession(): Promise<void> {
   }
 
   const config = getExtensionConfig();
-  let targetServerUrl = config.serverUrl;
+  let hostLocalServerUrl = config.serverUrl;
+  let publicServerUrl: string | undefined = undefined;
 
   // Auto-run Cloudflare Tunnel for worldwide collaboration if configured to localhost and cloudflared is installed
   if (
-    (targetServerUrl === 'ws://localhost:8787/ws' || targetServerUrl.includes('127.0.0.1')) &&
+    (hostLocalServerUrl === 'ws://localhost:8787/ws' || hostLocalServerUrl.includes('127.0.0.1')) &&
     tunnelManager &&
     (await tunnelManager.isCloudflaredAvailable())
   ) {
@@ -408,7 +409,7 @@ async function startHostSession(): Promise<void> {
       async (progress) => {
         progress.report({ message: 'Starting relay & Cloudflare tunnel...' });
         try {
-          targetServerUrl = await tunnelManager!.startTunnel(8787);
+          publicServerUrl = await tunnelManager!.startTunnel(8787);
           progress.report({ message: 'Connected to Cloudflare worldwide edge!' });
         } catch (err) {
           Logger.warn('Failed to auto-start Cloudflare tunnel, falling back to local relay', err);
@@ -420,17 +421,24 @@ async function startHostSession(): Promise<void> {
     );
   }
 
+  // If Cloudflare tunnel is active, host connects locally to 127.0.0.1:8787 to avoid
+  // internet round-trip and Cloudflare 530 DNS propagation delay, while guests connect via tunnel
+  if (publicServerUrl) {
+    hostLocalServerUrl = 'ws://127.0.0.1:8787/ws';
+  }
+
   const displayName = await resolveDisplayName();
 
   try {
     const rootPath = folders[0]!.uri.fsPath;
     const hostSession = new HostSession(
-      targetServerUrl,
+      hostLocalServerUrl,
       displayName,
       rootPath,
       config.excludePatterns,
       config.maxFileSizeMB,
       config.requireJoinApproval,
+      publicServerUrl,
     );
     activeSession = hostSession;
     statusBar?.setSession(hostSession);

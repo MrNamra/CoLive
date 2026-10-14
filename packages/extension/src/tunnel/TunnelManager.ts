@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { spawn, ChildProcess } from 'node:child_process';
 import http from 'node:http';
+import https from 'node:https';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -56,6 +57,33 @@ export class TunnelManager implements vscode.Disposable {
     });
   }
 
+  public async pingEndpoint(urlStr: string): Promise<boolean> {
+    return new Promise((resolve) => {
+      try {
+        const parsed = new URL(urlStr);
+        const client = parsed.protocol === 'https:' ? https : http;
+        const req = client.request(
+          parsed,
+          {
+            method: 'GET',
+            timeout: 2000,
+          },
+          (res) => {
+            resolve(res.statusCode === 200);
+          },
+        );
+        req.on('error', () => resolve(false));
+        req.on('timeout', () => {
+          req.destroy();
+          resolve(false);
+        });
+        req.end();
+      } catch {
+        resolve(false);
+      }
+    });
+  }
+
   public async ensureLocalServer(port = 8787): Promise<void> {
     const isOpen = await this.isPortOpen(port);
     if (isOpen) {
@@ -106,8 +134,20 @@ export class TunnelManager implements vscode.Disposable {
           this.activeWsUrl = wsUrl;
 
           this.saveTunnelUrls(wsUrl);
-          Logger.info(`Cloudflare Tunnel connected: ${webUrl} -> ${wsUrl}`);
-          resolve(wsUrl);
+          Logger.info(`Cloudflare Tunnel discovered: ${webUrl} -> ${wsUrl}`);
+
+          // Warm up edge to ensure DNS and edge proxying have propagated before returning
+          (async () => {
+            for (let i = 0; i < 8; i++) {
+              const ok = await this.pingEndpoint(`${webUrl}/health`);
+              if (ok) {
+                Logger.info('Cloudflare edge confirmed ready (HTTP 200).');
+                break;
+              }
+              await new Promise((r) => setTimeout(r, 400));
+            }
+            resolve(wsUrl);
+          })();
         }
       };
 
