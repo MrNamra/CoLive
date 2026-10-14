@@ -22,7 +22,7 @@ export interface GuestTerminalInstance {
 
 export class GuestTerminalService implements vscode.Disposable {
   private terminals = new Map<string, GuestTerminalInstance>();
-  private pendingRequests = new Map<string, (res: TerminalOpenRes) => void>();
+  private pendingRequests = new Map<string, { resolve: (res: TerminalOpenRes) => void; reject: (err: Error) => void }>();
   private disposables: vscode.Disposable[] = [];
   private isReadOnly = false;
 
@@ -51,10 +51,17 @@ export class GuestTerminalService implements vscode.Disposable {
         reject(new Error('Timed out waiting for host to open shared terminal'));
       }, 10_000);
 
-      this.pendingRequests.set(reqId, (res) => {
-        clearTimeout(timeout);
-        this.pendingRequests.delete(reqId);
-        resolve(res);
+      this.pendingRequests.set(reqId, {
+        resolve: (res) => {
+          clearTimeout(timeout);
+          this.pendingRequests.delete(reqId);
+          resolve(res);
+        },
+        reject: (err) => {
+          clearTimeout(timeout);
+          this.pendingRequests.delete(reqId);
+          reject(err);
+        },
       });
     });
 
@@ -134,8 +141,14 @@ export class GuestTerminalService implements vscode.Disposable {
   private handleMessage(msg: ColiveMessage): void {
     if (msg.type === 'terminal.open.res') {
       const res = msg as TerminalOpenRes;
-      const callback = this.pendingRequests.get(res.id);
-      if (callback) callback(res);
+      const handler = this.pendingRequests.get(res.id);
+      if (handler) handler.resolve(res);
+      return;
+    }
+
+    if (msg.type === 'error' && msg.id) {
+      const handler = this.pendingRequests.get(msg.id);
+      if (handler) handler.reject(new Error(msg.message || 'Error opening shared terminal on host'));
       return;
     }
 

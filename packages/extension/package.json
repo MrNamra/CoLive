@@ -57,7 +57,7 @@
     "viewsWelcome": [
       {
         "view": "colive.participants",
-        "contents": "Share your workspace or join an active session to collaborate in real-time.\n[Share Workspace](command:colive.startSession)\n[Join Session](command:colive.joinSession)\n\n[Show Process & Output Logs](command:colive.showLogs)"
+        "contents": "Share your workspace or join an active session to collaborate in real-time.\n[Share Workspace](command:colive.startSession)\n[Join Session](command:colive.joinSession)\n\n[Open Shared Terminal](command:colive.shareTerminal)\n[Show Process & Output Logs](command:colive.showLogs)"
       }
     ],
     "commands": [
@@ -146,12 +146,14 @@
       {
         "command": "colive.shareTerminal",
         "title": "CoLive: Share Terminal with Session",
-        "category": "CoLive"
+        "category": "CoLive",
+        "icon": "$(terminal)"
       },
       {
         "command": "colive.toggleTerminalWrite",
         "title": "CoLive: Toggle Terminal Guest Permissions",
-        "category": "CoLive"
+        "category": "CoLive",
+        "icon": "$(lock)"
       },
       {
         "command": "colive.setTunnelUrl",
@@ -186,7 +188,17 @@
         {
           "command": "colive.showLogs",
           "when": "view == colive.participants",
-          "group": "navigation"
+          "group": "navigation@1"
+        },
+        {
+          "command": "colive.shareTerminal",
+          "when": "view == colive.participants",
+          "group": "navigation@2"
+        },
+        {
+          "command": "colive.toggleTerminalWrite",
+          "when": "view == colive.participants",
+          "group": "navigation@3"
         }
       ],
       "editor/context": [

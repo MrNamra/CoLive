@@ -44,8 +44,9 @@ export class HostTerminalService implements vscode.Disposable {
     const shell =
       process.env.SHELL ||
       (process.platform === 'win32' ? 'powershell.exe' : '/bin/bash');
+    const shellArgs = process.platform === 'win32' ? [] : ['-i'];
 
-    const child = spawn(shell, [], {
+    const child = spawn(shell, shellArgs, {
       cwd: this.workspaceRoot,
       env: {
         ...process.env,
@@ -105,6 +106,11 @@ export class HostTerminalService implements vscode.Disposable {
     child.stdout.on('data', (d: Buffer) => queueOutput(d.toString('utf-8')));
     child.stderr.on('data', (d: Buffer) => queueOutput(d.toString('utf-8')));
 
+    child.on('error', (err) => {
+      queueOutput(`\r\n\x1b[31m[Failed to run shell: ${err.message}]\x1b[0m\r\n`);
+      flushOutput();
+    });
+
     child.on('exit', (code) => {
       flushOutput();
       const closeMsg: TerminalClose = {
@@ -124,7 +130,7 @@ export class HostTerminalService implements vscode.Disposable {
       open: () => {
         writeEmitter.fire(
           `\x1b[32m[CoLive] Shared Terminal started (${name})\x1b[0m\r\n` +
-          `\x1b[90mGuests can view output in real-time. Use 'CoLive: Toggle Terminal Permissions' to allow typing.\x1b[0m\r\n\r\n`,
+          `\x1b[90mGuests can view output in real-time. Use 'CoLive: Toggle Terminal Guest Permissions' to allow typing.\x1b[0m\r\n\r\n`,
         );
       },
       close: () => {
@@ -133,7 +139,8 @@ export class HostTerminalService implements vscode.Disposable {
       },
       handleInput: (data: string) => {
         if (!child.stdin.destroyed) {
-          child.stdin.write(data);
+          const normalized = data.replace(/\r(?!\n)/g, '\n');
+          child.stdin.write(normalized);
         }
       },
       setDimensions: (_dims: vscode.TerminalDimensions) => {
@@ -184,19 +191,13 @@ export class HostTerminalService implements vscode.Disposable {
     if (msg.type === 'terminal.open.req') {
       const req = msg as TerminalOpenReq;
       // Find terminal by name or use the first active shared terminal
-      const activeTerm =
-        Array.from(this.terminals.values()).find((t) => t.name === req.name) ||
+      let activeTerm =
+        (req.name ? Array.from(this.terminals.values()).find((t) => t.name === req.name) : undefined) ||
         this.terminals.values().next().value;
 
       if (!activeTerm) {
-        this.connectionManager.send({
-          v: PROTOCOL_VERSION,
-          type: 'error',
-          id: req.id,
-          code: 'NOT_FOUND',
-          message: 'No active shared terminal found on host',
-        });
-        return;
+        // Auto-create shared terminal so guest or host can access it immediately
+        activeTerm = this.shareTerminal(req.name || 'CoLive Shared Terminal');
       }
 
       // Send terminal.open.res with terminalId
@@ -225,8 +226,20 @@ export class HostTerminalService implements vscode.Disposable {
     if (msg.type === 'terminal.input') {
       const inputMsg = msg as TerminalInput;
       const term = this.terminals.get(inputMsg.terminalId);
-      if (term && term.guestWriteAllowed && !term.childProcess.stdin.destroyed) {
-        term.childProcess.stdin.write(inputMsg.data);
+      if (term) {
+        if (!term.guestWriteAllowed) {
+          this.connectionManager.send({
+            v: PROTOCOL_VERSION,
+            type: 'terminal.data',
+            terminalId: term.terminalId,
+            data: '\r\n\x1b[33m[Host has set this shared terminal to read-only. Ask host to allow typing.]\x1b[0m\r\n',
+          });
+          return;
+        }
+        if (!term.childProcess.stdin.destroyed) {
+          const normalized = inputMsg.data.replace(/\r(?!\n)/g, '\n');
+          term.childProcess.stdin.write(normalized);
+        }
       }
       return;
     }

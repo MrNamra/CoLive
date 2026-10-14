@@ -3,14 +3,22 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {
   CoLiveError,
+  FsCreateReq,
+  FsCreateRes,
+  FsDeleteReq,
+  FsDeleteRes,
   FsEntry,
   FsListReq,
   FsListRes,
   FsReadReq,
   FsReadRes,
+  FsRenameReq,
+  FsRenameRes,
   FsStatReq,
   FsStatRes,
   FsWatchChange,
+  FsWriteReq,
+  FsWriteRes,
   isExcluded,
   normalizeWorkspacePath,
   PROTOCOL_VERSION,
@@ -55,6 +63,18 @@ export class HostFileService implements vscode.Disposable {
           } else if (msg.type === 'fs.read.req') {
             const res = await this.handleRead(msg);
             connection.send(res);
+          } else if (msg.type === 'fs.write.req') {
+            const res = await this.handleWrite(msg);
+            connection.send(res);
+          } else if (msg.type === 'fs.create.req') {
+            const res = await this.handleCreate(msg);
+            connection.send(res);
+          } else if (msg.type === 'fs.delete.req') {
+            const res = await this.handleDelete(msg);
+            connection.send(res);
+          } else if (msg.type === 'fs.rename.req') {
+            const res = await this.handleRename(msg);
+            connection.send(res);
           } else if (msg.type === 'workspace.info.req') {
             connection.send({
               v: PROTOCOL_VERSION,
@@ -95,6 +115,13 @@ export class HostFileService implements vscode.Disposable {
 
     const fullPath = path.resolve(this.workspaceRoot, relPath);
 
+    const isInsideNormalized =
+      fullPath === this.workspaceRoot ||
+      fullPath.startsWith(this.workspaceRoot + path.sep);
+    if (!isInsideNormalized) {
+      throw new CoLiveError('FORBIDDEN', `Path escapes workspace root: ${rawRelPath}`);
+    }
+
     // Symlink escape & sandboxing verification
     if (fs.existsSync(fullPath)) {
       const realFullPath = fs.realpathSync(fullPath);
@@ -106,16 +133,22 @@ export class HostFileService implements vscode.Disposable {
         throw new CoLiveError('FORBIDDEN', `Symlink escapes workspace root: ${rawRelPath}`);
       }
     } else {
-      // Check parent directory for paths that don't exist yet
-      const parentDir = path.dirname(fullPath);
-      if (fs.existsSync(parentDir)) {
-        const realParent = fs.realpathSync(parentDir);
-        const isInside =
-          realParent === this.realWorkspaceRoot ||
-          realParent.startsWith(this.realWorkspaceRoot + path.sep);
-        if (!isInside) {
-          throw new CoLiveError('FORBIDDEN', `Path escapes workspace root: ${rawRelPath}`);
+      // Check nearest existing ancestor directory for symlink escapes
+      let curDir = path.dirname(fullPath);
+      while (curDir && curDir.length >= this.workspaceRoot.length) {
+        if (fs.existsSync(curDir)) {
+          const realParent = fs.realpathSync(curDir);
+          const isInside =
+            realParent === this.realWorkspaceRoot ||
+            realParent.startsWith(this.realWorkspaceRoot + path.sep);
+          if (!isInside) {
+            throw new CoLiveError('FORBIDDEN', `Path escapes workspace root: ${rawRelPath}`);
+          }
+          break;
         }
+        const parent = path.dirname(curDir);
+        if (parent === curDir) break;
+        curDir = parent;
       }
     }
 
@@ -222,6 +255,97 @@ export class HostFileService implements vscode.Disposable {
       contentBase64: buffer.toString('base64'),
       mtime: Math.floor(stat.mtimeMs),
       isBinary,
+    };
+  }
+
+  public async handleWrite(req: FsWriteReq): Promise<FsWriteRes> {
+    const { fullPath } = this.resolveSecurePath(req.path);
+    const parentDir = path.dirname(fullPath);
+    if (!fs.existsSync(parentDir)) {
+      await fs.promises.mkdir(parentDir, { recursive: true });
+    }
+
+    const buffer = Buffer.from(req.contentBase64, 'base64');
+    if (buffer.length > this.maxFileSizeBytes) {
+      throw new CoLiveError(
+        'TOO_LARGE',
+        `File size (${Math.round(buffer.length / 1024)} KB) exceeds limit of ${Math.round(this.maxFileSizeBytes / (1024 * 1024))} MB`,
+      );
+    }
+
+    await fs.promises.writeFile(fullPath, buffer);
+    const stat = await fs.promises.stat(fullPath);
+
+    return {
+      v: PROTOCOL_VERSION,
+      type: 'fs.write.res',
+      id: req.id,
+      mtime: Math.floor(stat.mtimeMs),
+    };
+  }
+
+  public async handleCreate(req: FsCreateReq): Promise<FsCreateRes> {
+    const { fullPath } = this.resolveSecurePath(req.path);
+    const parentDir = path.dirname(fullPath);
+    if (!fs.existsSync(parentDir)) {
+      await fs.promises.mkdir(parentDir, { recursive: true });
+    }
+
+    if (req.itemType === 'dir') {
+      if (!fs.existsSync(fullPath)) {
+        await fs.promises.mkdir(fullPath, { recursive: true });
+      }
+    } else {
+      if (!fs.existsSync(fullPath)) {
+        await fs.promises.writeFile(fullPath, Buffer.alloc(0));
+      }
+    }
+
+    return {
+      v: PROTOCOL_VERSION,
+      type: 'fs.create.res',
+      id: req.id,
+    };
+  }
+
+  public async handleDelete(req: FsDeleteReq): Promise<FsDeleteRes> {
+    const { fullPath } = this.resolveSecurePath(req.path);
+    if (!fs.existsSync(fullPath)) {
+      throw new CoLiveError('NOT_FOUND', `Path not found: ${req.path}`);
+    }
+
+    await fs.promises.rm(fullPath, { recursive: req.recursive ?? false, force: true });
+
+    return {
+      v: PROTOCOL_VERSION,
+      type: 'fs.delete.res',
+      id: req.id,
+    };
+  }
+
+  public async handleRename(req: FsRenameReq): Promise<FsRenameRes> {
+    const { fullPath: oldFullPath } = this.resolveSecurePath(req.oldPath);
+    const { fullPath: newFullPath } = this.resolveSecurePath(req.newPath);
+
+    if (!fs.existsSync(oldFullPath)) {
+      throw new CoLiveError('NOT_FOUND', `Source path not found: ${req.oldPath}`);
+    }
+
+    if (fs.existsSync(newFullPath) && !req.overwrite) {
+      throw new CoLiveError('ALREADY_EXISTS', `Path already exists: ${req.newPath}`);
+    }
+
+    const parentDir = path.dirname(newFullPath);
+    if (!fs.existsSync(parentDir)) {
+      await fs.promises.mkdir(parentDir, { recursive: true });
+    }
+
+    await fs.promises.rename(oldFullPath, newFullPath);
+
+    return {
+      v: PROTOCOL_VERSION,
+      type: 'fs.rename.res',
+      id: req.id,
     };
   }
 

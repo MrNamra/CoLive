@@ -135,4 +135,65 @@ describe('HostFileService Sandboxing & Traversal Defense', () => {
       }),
     ).rejects.toThrowError(/exceeds limit/);
   });
+
+  it('handles write, create, delete, and rename operations securely', async () => {
+    // 1. Write new file (e.g. guest creates new.js)
+    const writeRes = await service.handleWrite({
+      v: PROTOCOL_VERSION,
+      type: 'fs.write.req',
+      id: 'write_new',
+      path: 'new.js',
+      contentBase64: Buffer.from('console.log("hello world");').toString('base64'),
+    });
+    expect(writeRes.type).toBe('fs.write.res');
+    expect(writeRes.id).toBe('write_new');
+    expect(fs.readFileSync(path.join(tempRoot, 'new.js'), 'utf-8')).toBe('console.log("hello world");');
+
+    // 2. Reject write to excluded file
+    await expect(
+      service.handleWrite({
+        v: PROTOCOL_VERSION,
+        type: 'fs.write.req',
+        id: 'write_env',
+        path: '.env',
+        contentBase64: Buffer.from('HACKED').toString('base64'),
+      }),
+    ).rejects.toThrowError(/excluded/);
+
+    // 3. Create directory
+    const createDirRes = await service.handleCreate({
+      v: PROTOCOL_VERSION,
+      type: 'fs.create.req',
+      id: 'create_dir',
+      path: 'subdir',
+      itemType: 'dir',
+    });
+    expect(createDirRes.type).toBe('fs.create.res');
+    expect(fs.existsSync(path.join(tempRoot, 'subdir'))).toBe(true);
+
+    // 4. Rename file
+    const renameRes = await service.handleRename({
+      v: PROTOCOL_VERSION,
+      type: 'fs.rename.req',
+      id: 'rename_file',
+      oldPath: 'new.js',
+      newPath: 'subdir/renamed.js',
+      overwrite: true,
+    });
+    expect(renameRes.type).toBe('fs.rename.res');
+    expect(fs.existsSync(path.join(tempRoot, 'subdir/renamed.js'))).toBe(true);
+    expect(fs.existsSync(path.join(tempRoot, 'new.js'))).toBe(false);
+
+    // 5. Delete file
+    const deleteRes = await service.handleDelete({
+      v: PROTOCOL_VERSION,
+      type: 'fs.delete.req',
+      id: 'delete_file',
+      path: 'subdir/renamed.js',
+      recursive: false,
+    });
+    expect(deleteRes.type).toBe('fs.delete.res');
+    expect(fs.existsSync(path.join(tempRoot, 'subdir/renamed.js'))).toBe(false);
+  });
 });
+
