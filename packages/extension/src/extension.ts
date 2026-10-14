@@ -23,13 +23,18 @@ export function activate(context: vscode.ExtensionContext): void {
   Logger.initialize();
   Logger.info('CoLive extension activating...');
 
-  tunnelManager = new TunnelManager();
+  tunnelManager = new TunnelManager(context.globalStorageUri.fsPath);
   statusBar = new StatusBarManager();
   participantsTree = new ParticipantsTreeProvider();
   commentsTree = new CommentsTreeProvider();
   chatProvider = new ChatViewProvider(context.extensionUri);
 
   context.subscriptions.push(tunnelManager);
+  context.subscriptions.push(
+    vscode.commands.registerCommand('colive.showLogs', () => {
+      Logger.show();
+    }),
+  );
 
   context.subscriptions.push(statusBar);
   context.subscriptions.push(participantsTree);
@@ -399,12 +404,26 @@ async function startHostSession(): Promise<void> {
     hostLocalServerUrl.includes('127.0.0.1') ||
     hostLocalServerUrl.includes('trycloudflare.com');
 
-  // Auto-run Cloudflare Tunnel for worldwide collaboration if configured to localhost/trycloudflare and cloudflared is installed
-  if (
-    isLocalOrTryCloudflare &&
-    tunnelManager &&
-    (await tunnelManager.isCloudflaredAvailable())
-  ) {
+  // 1. ALWAYS start the local relay server first. This prevents connect ECONNREFUSED 127.0.0.1:8787!
+  try {
+    if (tunnelManager) {
+      await tunnelManager.ensureLocalServer(8787);
+    }
+  } catch (relayErr) {
+    Logger.error('Failed to start local relay server', relayErr);
+    vscode.window
+      .showErrorMessage(
+        `Failed to start CoLive local relay server: ${relayErr instanceof Error ? relayErr.message : String(relayErr)}`,
+        'Show Logs',
+      )
+      .then((choice) => {
+        if (choice === 'Show Logs') Logger.show();
+      });
+    return;
+  }
+
+  // 2. Auto-run / auto-provision Cloudflare Tunnel for worldwide collaboration
+  if (isLocalOrTryCloudflare && tunnelManager) {
     await vscode.window.withProgress(
       {
         location: vscode.ProgressLocation.Notification,
@@ -412,15 +431,35 @@ async function startHostSession(): Promise<void> {
         cancellable: false,
       },
       async (progress) => {
-        progress.report({ message: 'Starting relay & Cloudflare tunnel...' });
+        progress.report({ message: 'Checking Cloudflare Tunnel helper...' });
         try {
-          publicServerUrl = await tunnelManager!.startTunnel(8787);
-          progress.report({ message: 'Connected to Cloudflare worldwide edge!' });
+          const bin = await tunnelManager!.ensureCloudflared((msg) => progress.report({ message: msg }));
+          if (bin) {
+            progress.report({ message: 'Connecting to Cloudflare worldwide edge...' });
+            publicServerUrl = await tunnelManager!.startTunnel(8787, bin);
+            progress.report({ message: 'Connected to Cloudflare worldwide edge!' });
+            Logger.info(`Worldwide Cloudflare tunnel online: ${publicServerUrl}`);
+          } else {
+            Logger.warn('Cloudflare tunnel helper (cloudflared) not available. Falling back to local relay.');
+            vscode.window
+              .showInformationMessage(
+                'CoLive: Session is running locally on 127.0.0.1:8787. To share worldwide, install cloudflared or use "CoLive: Set Cloudflare Tunnel URL".',
+                'Show Logs',
+              )
+              .then((choice) => {
+                if (choice === 'Show Logs') Logger.show();
+              });
+          }
         } catch (err) {
-          Logger.warn('Failed to auto-start Cloudflare tunnel, falling back to local relay', err);
-          vscode.window.showWarningMessage(
-            'Could not auto-start Cloudflare tunnel; falling back to local relay server.',
-          );
+          Logger.warn('Failed to start Cloudflare tunnel, falling back to local relay', err);
+          vscode.window
+            .showWarningMessage(
+              `Cloudflare tunnel could not be started: ${err instanceof Error ? err.message : String(err)}. Falling back to local relay server.`,
+              'Show Logs',
+            )
+            .then((choice) => {
+              if (choice === 'Show Logs') Logger.show();
+            });
         }
       },
     );
@@ -455,8 +494,18 @@ async function startHostSession(): Promise<void> {
     chatProvider?.setSession(hostSession.connection, 'host', displayName);
   } catch (err) {
     Logger.error('Failed to start host session', err);
-    vscode.window.showErrorMessage(`Failed to start CoLive session: ${err instanceof Error ? err.message : String(err)}`);
-    activeSession = null;
+    vscode.window
+      .showErrorMessage(
+        `Failed to start CoLive session: ${err instanceof Error ? err.message : String(err)}`,
+        'Show Logs',
+      )
+      .then((choice) => {
+        if (choice === 'Show Logs') Logger.show();
+      });
+    if (activeSession) {
+      activeSession.dispose();
+      activeSession = null;
+    }
     statusBar?.setSession(null);
     participantsTree?.setSession(null);
     commentsTree?.setCommentsManager(null);
@@ -496,8 +545,8 @@ async function joinSessionByIdAndSecret(
   const targetServerUrl = serverUrl || config.serverUrl;
   const displayName = await resolveDisplayName();
 
+  const guestSession = new GuestSession(targetServerUrl, sessionId, secret, displayName);
   try {
-    const guestSession = new GuestSession(targetServerUrl, sessionId, secret, displayName);
     activeSession = guestSession;
     statusBar?.setSession(guestSession);
     participantsTree?.setSession(guestSession);
@@ -508,7 +557,17 @@ async function joinSessionByIdAndSecret(
     chatProvider?.setSession(guestSession.connection, guestSession.guestId, displayName);
   } catch (err) {
     Logger.error('Failed to join session', err);
-    vscode.window.showErrorMessage(`Failed to join CoLive session (${targetServerUrl}): ${err instanceof Error ? err.message : String(err)}`);
+    vscode.window
+      .showErrorMessage(
+        `Failed to join CoLive session (${targetServerUrl}): ${err instanceof Error ? err.message : String(err)}`,
+        'Show Logs',
+      )
+      .then((choice) => {
+        if (choice === 'Show Logs') Logger.show();
+      });
+
+    // Ensure guest session is disposed so its socket does not stay open on the server
+    guestSession.dispose();
     activeSession = null;
     statusBar?.setSession(null);
     participantsTree?.setSession(null);

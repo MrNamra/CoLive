@@ -82,6 +82,11 @@
         "category": "CoLive"
       },
       {
+        "command": "colive.showLogs",
+        "title": "CoLive: Show Output Logs",
+        "category": "CoLive"
+      },
+      {
         "command": "colive.copyInvite",
         "title": "CoLive: Copy Invite Link",
         "category": "CoLive"

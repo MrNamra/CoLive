@@ -283,6 +283,14 @@ export class RemoteCursorRenderer implements vscode.Disposable {
     decs.labelType.dispose();
   }
 
+  public removeParticipant(userId: string): void {
+    const decs = this.participantDecorations.get(userId);
+    if (decs) {
+      this.disposeParticipantDecorations(decs);
+      this.participantDecorations.delete(userId);
+    }
+  }
+
   private normalizeDocumentPath(doc: vscode.TextDocument): string | undefined {
     if (doc.uri.scheme === 'file') {
       if (!this.workspaceRoot) return undefined;

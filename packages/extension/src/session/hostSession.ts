@@ -204,10 +204,13 @@ export class HostSession extends SessionController {
 
     if (msg.type === 'server.participantLeft') {
       const p = this.participantsMap.get(msg.participantId);
+      this.participantsMap.delete(msg.participantId);
+      this.presenceManager?.removeUser(msg.participantId);
+      this.cursorRenderer?.removeParticipant(msg.participantId);
+      this._onDidChangeParticipants.fire(this.getParticipants());
       if (p) {
-        this.participantsMap.delete(msg.participantId);
-        this._onDidChangeParticipants.fire(this.getParticipants());
         vscode.window.setStatusBarMessage(`CoLive: ${p.displayName} left the session`, 4000);
+        Logger.info(`Participant left and removed: ${p.displayName} (${msg.participantId})`);
       }
       return;
     }

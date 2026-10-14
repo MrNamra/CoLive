@@ -246,6 +246,20 @@ export class PresenceManager implements vscode.Disposable {
     });
   }
 
+  public removeUser(userId: string): void {
+    const toRemove: number[] = [];
+    for (const [clientId, state] of this.awareness.getStates().entries()) {
+      const presence = state as UserPresenceState;
+      if (presence?.user?.id === userId) {
+        toRemove.push(clientId);
+      }
+    }
+    if (toRemove.length > 0) {
+      awarenessProtocol.removeAwarenessStates(this.awareness, toRemove, 'presence-manager');
+      this._onDidChangePresence.fire(this.getStates());
+    }
+  }
+
   private publishActiveEditor(editor?: vscode.TextEditor): void {
     if (!editor) {
       const current = (this.awareness.getLocalState() as UserPresenceState) || {};

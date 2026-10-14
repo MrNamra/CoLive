@@ -877,12 +877,24 @@ export class RelayServer {
       if (p) {
         session.participants.delete(client.participantId);
         session.participantToClient.delete(client.participantId);
+        session.clientToParticipant.delete(client.id);
+        if (p.color) {
+          session.assignedColors.delete(p.color);
+        }
         this.broadcastToSession(session, {
           v: PROTOCOL_VERSION,
           type: 'server.participantLeft',
           participantId: p.id,
           reason: 'Disconnected',
         });
+      }
+    }
+
+    // Clean up any pending join requests from this client
+    for (const [reqId, pending] of session.pendingJoins.entries()) {
+      if (pending.guestTempId === client.id) {
+        if (pending.timeoutId) clearTimeout(pending.timeoutId);
+        session.pendingJoins.delete(reqId);
       }
     }
   }
