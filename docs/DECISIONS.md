@@ -32,3 +32,12 @@ This document records architectural, protocol, and design decisions made during 
 - **Decision**: In `fs.stat.res`, the file's entry type is named `fileType` (`file` | `dir` | `symlink`) while the outer envelope retains `type: "fs.stat.res"`.
 - **Rationale**: Prevents TypeScript and JSON property shadowing collisions on the top-level message object.
 
+## 7. Three-Way External Disk Merging via fast-diff
+- **Decision**: When an external process (git checkout, external code formatter) modifies a file on disk while participants are actively editing in memory, `HostPersistence` calculates a 3-way diff: `fastDiff(oldKnownDiskContent, newDiskContent)` and applies the edits to `Y.Text` inside a transaction tagged with origin `'disk'`.
+- **Rationale**: Directly diffing `currentYText` against `newDiskContent` would erase concurrent edits made by guests that had not yet been saved to disk. Diffing the disk transformation from old-to-new preserves both external changes and in-flight collaborative typing.
+
+## 8. RPC Message ID Echoing on Async Approvals & Handshakes
+- **Decision**: In the relay server, all asynchronous responses (`server.sessionCreated`, `server.joinAccepted`, `server.joinRejected`, and all `.res` payloads) preserve and echo the client's original `msg.id` envelope identifier.
+- **Rationale**: Enables `ConnectionManager.request<T>()` to correlate responses with pending promises across asynchronous multi-hop flows (such as human host join approval modals).
+
+

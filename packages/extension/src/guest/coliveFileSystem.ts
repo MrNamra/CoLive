@@ -32,6 +32,7 @@ export class CoLiveFileSystemProvider implements vscode.FileSystemProvider, vsco
 
   private connection: ConnectionManager;
   private isReadOnly = false;
+  private isSyncedFile?: (relPath: string) => boolean;
   private statCache: Map<string, CachedStat> = new Map();
   private dirCache: Map<string, CachedDir> = new Map();
   private fileCache: Map<string, CachedFile> = new Map();
@@ -41,10 +42,15 @@ export class CoLiveFileSystemProvider implements vscode.FileSystemProvider, vsco
   private _onDidChangeFile = new vscode.EventEmitter<vscode.FileChangeEvent[]>();
   public readonly onDidChangeFile: vscode.Event<vscode.FileChangeEvent[]> = this._onDidChangeFile.event;
 
-  constructor(connection: ConnectionManager, isReadOnly = false) {
+  constructor(connection: ConnectionManager, isReadOnly = false, isSyncedFile?: (relPath: string) => boolean) {
     this.connection = connection;
     this.isReadOnly = isReadOnly;
+    this.isSyncedFile = isSyncedFile;
     this.setupWatchEventListener();
+  }
+
+  public setSyncedFileCheck(check: (relPath: string) => boolean): void {
+    this.isSyncedFile = check;
   }
 
   public setReadOnly(isReadOnly: boolean): void {
@@ -241,6 +247,11 @@ export class CoLiveFileSystemProvider implements vscode.FileSystemProvider, vsco
     }
 
     const relPath = this.extractRelativePath(uri);
+    if (this.isSyncedFile && this.isSyncedFile(relPath)) {
+      // Actively synced collaborative document; saved by host automatically
+      vscode.window.setStatusBarMessage(Strings.savedByHost, 3000);
+      return;
+    }
 
     try {
       const contentBase64 = Buffer.from(content).toString('base64');

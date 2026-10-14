@@ -5,6 +5,7 @@ export interface PendingJoin {
   guestTempId: string;
   displayName: string;
   expiresAt: number;
+  reqId?: string;
   timeoutId?: NodeJS.Timeout;
 }
 

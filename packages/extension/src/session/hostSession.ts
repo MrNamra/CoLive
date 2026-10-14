@@ -12,6 +12,7 @@ import { buildDeepLink, buildPasteCode } from '../invite.js';
 import { Logger } from '../logger.js';
 import { Strings } from '../strings.js';
 import { HostFileService } from '../host/fileService.js';
+import { SyncManager } from '../sync/SyncManager.js';
 import { SessionController } from './sessionController.js';
 
 export class HostSession extends SessionController {
@@ -20,6 +21,7 @@ export class HostSession extends SessionController {
   public inviteSecret = '';
   public expiresAt = 0;
   public fileService: HostFileService | null = null;
+  public syncManager: SyncManager | null = null;
   private serverUrl: string;
   private displayName: string;
   private requireApproval: boolean;
@@ -82,6 +84,13 @@ export class HostSession extends SessionController {
     // Initialize host file service
     this.fileService = new HostFileService(this.workspaceRoot, this.excludePatterns, this.maxFileSizeMB);
     this.fileService.setConnection(this.connection);
+
+    // Initialize host sync manager
+    this.syncManager = new SyncManager({
+      connection: this.connection,
+      role: 'host',
+      workspaceRoot: this.workspaceRoot,
+    });
 
     // Add self as host participant
     const hostParticipant: ParticipantInfo = {
@@ -242,6 +251,10 @@ export class HostSession extends SessionController {
   }
 
   public override dispose(): void {
+    if (this.syncManager) {
+      this.syncManager.dispose();
+      this.syncManager = null;
+    }
     if (this.fileService) {
       this.fileService.dispose();
       this.fileService = null;

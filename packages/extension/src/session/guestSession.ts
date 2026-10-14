@@ -13,6 +13,7 @@ import { buildPasteCode } from '../invite.js';
 import { Logger } from '../logger.js';
 import { Strings } from '../strings.js';
 import { CoLiveFileSystemProvider } from '../guest/coliveFileSystem.js';
+import { SyncManager } from '../sync/SyncManager.js';
 import { SessionController } from './sessionController.js';
 
 export class GuestSession extends SessionController {
@@ -23,6 +24,7 @@ export class GuestSession extends SessionController {
   public permission: Permission = 'readWrite';
   public hostInfo: ParticipantInfo | null = null;
   public fsProvider: CoLiveFileSystemProvider | null = null;
+  public syncManager: SyncManager | null = null;
   private fsRegistration: vscode.Disposable | null = null;
   private mountedFolderUri: vscode.Uri | null = null;
   private serverUrl: string;
@@ -106,8 +108,19 @@ export class GuestSession extends SessionController {
             status: 'active',
           });
 
+          // Initialize sync manager
+          this.syncManager = new SyncManager({
+            connection: this.connection!,
+            role: 'guest',
+            isReadOnly: this.permission === 'readOnly',
+          });
+
           // Register Virtual File System Provider
-          this.fsProvider = new CoLiveFileSystemProvider(this.connection!, this.permission === 'readOnly');
+          this.fsProvider = new CoLiveFileSystemProvider(
+            this.connection!,
+            this.permission === 'readOnly',
+            (relPath) => !!this.syncManager?.getYText(relPath),
+          );
           try {
             this.fsRegistration = vscode.workspace.registerFileSystemProvider(
               CoLiveFileSystemProvider.SCHEME,
@@ -169,6 +182,9 @@ export class GuestSession extends SessionController {
       this.participantsMap.set(msg.participant.id, msg.participant);
       if (msg.participant.id === this.guestId) {
         this.permission = msg.participant.permission;
+        const isReadOnly = this.permission === 'readOnly';
+        this.fsProvider?.setReadOnly(isReadOnly);
+        this.syncManager?.setReadOnly(isReadOnly);
       }
       this._onDidChangeParticipants.fire(this.getParticipants());
       return;
@@ -194,6 +210,11 @@ export class GuestSession extends SessionController {
   }
 
   public override dispose(): void {
+    if (this.syncManager) {
+      this.syncManager.dispose();
+      this.syncManager = null;
+    }
+
     if (this.mountedFolderUri && vscode.workspace.workspaceFolders) {
       const idx = vscode.workspace.workspaceFolders.findIndex(
         (f) => f.uri.toString() === this.mountedFolderUri!.toString(),

@@ -49,6 +49,7 @@ export class RelayServer {
   private pingInterval?: NodeJS.Timeout;
   private cleanupInterval?: NodeJS.Timeout;
   private rpcPendingTimeouts: Map<string, NodeJS.Timeout> = new Map();
+  private rpcPendingParticipants: Map<string, string | undefined> = new Map();
 
   constructor(config: ServerConfig, store?: SessionStore) {
     this.config = config;
@@ -304,6 +305,7 @@ export class RelayServer {
       this.sendJson(client, {
         v: PROTOCOL_VERSION,
         type: 'server.sessionCreated',
+        id: msg.id,
         sessionId,
         hostToken,
         inviteSecret,
@@ -340,6 +342,7 @@ export class RelayServer {
         this.sendJson(client, {
           v: PROTOCOL_VERSION,
           type: 'server.joinAccepted',
+          id: msg.id,
           guestId: participant.id,
           guestToken: participant.id,
           permission: participant.permission,
@@ -427,11 +430,13 @@ export class RelayServer {
         guestTempId: client.id,
         displayName: sanitizedName,
         expiresAt: Date.now() + 60_000,
+        reqId: msg.id,
         timeoutId: setTimeout(() => {
           session.pendingJoins.delete(requestId);
           this.sendJson(client, {
             v: PROTOCOL_VERSION,
             type: 'server.joinRejected',
+            id: msg.id,
             reason: 'Join request timed out waiting for host approval',
           });
         }, 60_000),
@@ -474,6 +479,7 @@ export class RelayServer {
         this.sendJson(guestClient, {
           v: PROTOCOL_VERSION,
           type: 'server.joinRejected',
+          id: pending.reqId,
           reason: msg.reason || 'Host declined join request',
         });
         return;
@@ -522,6 +528,7 @@ export class RelayServer {
       this.sendJson(guestClient, {
         v: PROTOCOL_VERSION,
         type: 'server.joinAccepted',
+        id: pending.reqId,
         guestId,
         guestToken,
         permission: msg.permission,
@@ -616,11 +623,11 @@ export class RelayServer {
       return;
     }
 
-    // Workspace & Doc RPC routing: Guest -> Host
+    // Workspace & Doc RPC routing: Guest -> Host, Host -> Guest
     if (
       msg.type.startsWith('fs.') ||
-      msg.type === 'workspace.info.req' ||
-      msg.type === 'doc.open.req'
+      msg.type.endsWith('.req') ||
+      msg.type.endsWith('.res')
     ) {
       if (client.role === 'host') {
         // Response from Host -> Route to specific guest by request id
@@ -756,8 +763,10 @@ export class RelayServer {
     }
 
     if (msg.id) {
+      this.rpcPendingParticipants.set(msg.id, guestClient.participantId);
       const timeoutId = setTimeout(() => {
         this.rpcPendingTimeouts.delete(msg.id!);
+        this.rpcPendingParticipants.delete(msg.id!);
         this.sendJson(guestClient, {
           v: PROTOCOL_VERSION,
           type: 'error',
@@ -779,6 +788,18 @@ export class RelayServer {
       if (timeout) {
         clearTimeout(timeout);
         this.rpcPendingTimeouts.delete(msg.id);
+      }
+      const participantId = this.rpcPendingParticipants.get(msg.id);
+      if (participantId) {
+        this.rpcPendingParticipants.delete(msg.id);
+        if (msg.type === 'doc.open.res' && 'docId' in msg && typeof msg.docId === 'string') {
+          let subs = session.docSubscriptions.get(msg.docId);
+          if (!subs) {
+            subs = new Set();
+            session.docSubscriptions.set(msg.docId, subs);
+          }
+          subs.add(participantId);
+        }
       }
     }
 

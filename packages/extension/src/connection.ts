@@ -51,10 +51,8 @@ export class ConnectionManager {
   }
 
   public on<K extends keyof ConnectionEvents>(event: K, listener: ConnectionEvents[K]): void {
-    if (!this.listeners[event]) {
-      this.listeners[event] = new Set();
-    }
-    this.listeners[event]!.add(listener);
+    const set = (this.listeners[event] ??= new Set() as unknown as Set<ConnectionEvents[K]>);
+    set.add(listener);
   }
 
   public off<K extends keyof ConnectionEvents>(event: K, listener: ConnectionEvents[K]): void {
@@ -238,6 +236,14 @@ export class ConnectionManager {
     }
   }
 
+  public sendJson(msg: ColiveMessage): void {
+    this.send(msg);
+  }
+
+  public sendBinary(data: Uint8Array): void {
+    this.send(data);
+  }
+
   public request<T = ColiveMessage>(msg: ColiveMessage, timeoutMs = 15000): Promise<T> {
     if (!msg.id) {
       msg.id = `req_${Math.random().toString(36).slice(2, 10)}`;
@@ -249,7 +255,7 @@ export class ConnectionManager {
         reject(new Error(`RPC request '${msg.type}' timed out after ${timeoutMs}ms`));
       }, timeoutMs);
 
-      this.pendingRpcs.set(msg.id!, { resolve, reject, timer });
+      this.pendingRpcs.set(msg.id!, { resolve: resolve as (val: ColiveMessage) => void, reject, timer });
       this.send(msg);
     });
   }
