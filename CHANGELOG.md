@@ -18,6 +18,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Shared Diagnostics**: Broadcasts language server diagnostics and lint errors from Host to Guest `DiagnosticCollection`.
 - **End-to-End Encryption (E2EE)**: WebCrypto AES-256-GCM authenticated encryption with HKDF-SHA256 key derivation from session secrets.
 - **Security Hardening**: Strict path traversal and symlink-escape prevention with `fs.realpathSync`, sensitive file glob filtering (`.env*`, `**/.git/**`, `**/id_rsa*`), and token bucket DoS mitigations.
-- **Multi-Editor Support**: Tested for full compatibility with VS Code, Google Antigravity, Cursor, and VSCodium.
+- **Multi-Editor Support**: Tested for full compatibility with VS Code, Cursor, and VSCodium.
 - **Interactive Walkthroughs**: Built-in 4-step onboarding walkthroughs in package manifest.
 - **Headless E2E Test Suite**: Multi-client 5,000-operation concurrency and security fuzz test suite.

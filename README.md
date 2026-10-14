@@ -1,10 +1,10 @@
 # CoLive 🚀
 
-**Next-generation, real-time collaboration extension for VS Code-compatible editors (VS Code, Antigravity, Cursor, VSCodium).**
+**Next-generation, real-time collaboration extension for VS Code-compatible editors (VS Code, Cursor, VSCodium).**
 
 Work together in the same workspace on one machine's files anywhere in the world: live co-editing, remote cursors & selections, inline code comments, follow mode, session chat, shared diagnostics, and shared terminal.
 
-[![CI](https://github.com/colive/colive/actions/workflows/ci.yml/badge.svg)](https://github.com/colive/colive/actions/workflows/ci.yml)
+[![CI](https://github.com/MrNamra/CoLive/actions/workflows/ci.yml/badge.svg)](https://github.com/MrNamra/CoLive/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Engines: VS Code ^1.90.0](https://img.shields.io/badge/VS%20Code-%5E1.90.0-007ACC.svg)](https://code.visualstudio.com/)
 [![E2E Encryption](https://img.shields.io/badge/Security-E2EE%20(AES--256--GCM)-success.svg)](docs/SECURITY.md)
@@ -73,7 +73,7 @@ graph TD
 
 ### For Hosts (Sharing a Workspace)
 
-1. **Open your project folder** in VS Code, Antigravity, or Cursor.
+1. **Open your project folder** in VS Code, Cursor, or VSCodium.
 2. Click **"Share"** in the status bar (or press `Ctrl+Alt+L S` / `Cmd+Alt+L S`, or open Command Palette and run `CoLive: Share Workspace (Start Session)`).
 3. Choose guest permission: **Read-Write** (collaborative) or **Read-Only** (review mode).
 4. The invite link is automatically copied to your clipboard (e.g. `colive://join/81db8af1-aeb1-4cf3-a5af-f08f271b41e1#secret=...`). Share it with your teammates!
@@ -193,8 +193,8 @@ CoLive adheres to a strict **zero-telemetry** commitment:
 
 ```bash
 # Clone and install
-git clone https://github.com/colive/colive.git
-cd colive
+git clone https://github.com/MrNamra/CoLive.git
+cd CoLive
 npm install
 
 # Build all packages

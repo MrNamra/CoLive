@@ -8,19 +8,30 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/colive/colive.git"
+    "url": "https://github.com/MrNamra/CoLive.git"
   },
   "bugs": {
-    "url": "https://github.com/colive/colive/issues"
+    "url": "https://github.com/MrNamra/CoLive/issues"
   },
-  "homepage": "https://github.com/colive/colive#readme",
+  "homepage": "https://github.com/MrNamra/CoLive#readme",
+  "keywords": [
+    "collaboration",
+    "live share",
+    "pair programming",
+    "remote cursor",
+    "real-time",
+    "yjs",
+    "crdt",
+    "screen share",
+    "code sharing"
+  ],
   "engines": {
     "vscode": "^1.90.0"
   },
   "categories": [
-    "Other",
+    "Collaboration",
     "Programming Languages",
-    "Collaboration"
+    "Other"
   ],
   "main": "./dist/extension.cjs",
   "activationEvents": [
@@ -229,7 +240,7 @@
       {
         "id": "colive.welcome",
         "title": "Get Started with CoLive",
-        "description": "Learn how to collaborate in real-time with CoLive in VS Code, Antigravity, and Cursor.",
+        "description": "Learn how to collaborate in real-time with CoLive in VS Code, Cursor, and VSCodium.",
         "steps": [
           {
             "id": "colive.step.displayName",

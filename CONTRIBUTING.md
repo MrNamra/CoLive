@@ -20,8 +20,8 @@ Thank you for your interest in contributing to CoLive! We welcome bug reports, f
 ### Setup Instructions
 ```bash
 # 1. Clone repository
-git clone https://github.com/colive/colive.git
-cd colive
+git clone https://github.com/MrNamra/CoLive.git
+cd CoLive
 
 # 2. Install dependencies across workspaces
 npm install
@@ -37,7 +37,7 @@ npm run lint
 ```
 
 ### Local Testing with Two Windows
-To test real-time collaboration with two instances of VS Code / Antigravity side-by-side:
+To test real-time collaboration with two instances of VS Code side-by-side:
 ```bash
 # On Linux/macOS
 ./scripts/dev-two-windows.sh

@@ -1,6 +1,6 @@
 # CoLive Implementation Plan
 
-This document outlines the end-to-end plan for building **CoLive**, a production-grade, real-time collaboration extension for VS Code-compatible editors (VS Code, Antigravity, Cursor, VSCodium).
+This document outlines the end-to-end plan for building **CoLive**, a production-grade, real-time collaboration extension for VS Code-compatible editors (VS Code, Cursor, VSCodium).
 
 ---
 

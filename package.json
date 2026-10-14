@@ -4,6 +4,11 @@
   "private": true,
   "type": "module",
   "description": "Real-time collaboration extension for VS Code-compatible editors",
+  "author": "MrNamra",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/MrNamra/CoLive.git"
+  },
   "workspaces": [
     "packages/*"
   ],

@@ -14,12 +14,14 @@ GUEST_EXT="$DEV_DIR/guest-extensions"
 # Choose editor binary
 EDITOR_BIN="${EDITOR_BIN:-}"
 if [ -z "$EDITOR_BIN" ]; then
-  if command -v antigravity >/dev/null 2>&1; then
-    EDITOR_BIN="antigravity"
-  elif command -v code >/dev/null 2>&1; then
+  if command -v code >/dev/null 2>&1; then
     EDITOR_BIN="code"
+  elif command -v codium >/dev/null 2>&1; then
+    EDITOR_BIN="codium"
+  elif command -v cursor >/dev/null 2>&1; then
+    EDITOR_BIN="cursor"
   else
-    echo "Error: neither 'antigravity' nor 'code' executable found in PATH." >&2
+    echo "Error: no compatible editor ('code', 'codium', 'cursor') found in PATH." >&2
     exit 1
   fi
 fi

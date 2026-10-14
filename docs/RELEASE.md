@@ -75,7 +75,7 @@ Pushing the `v*` tag triggers `.github/workflows/release.yml`:
 ## 5. Post-Release Verification
 
 1. Download the generated `.vsix` from GitHub Releases.
-2. Test installation in a clean VS Code / Antigravity instance:
+2. Test installation in a clean VS Code instance:
    ```bash
    code --install-extension colive-X.Y.Z.vsix
    ```

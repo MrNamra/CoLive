@@ -11,12 +11,14 @@ $GuestExt = Join-Path $DevDir "guest-extensions"
 
 $EditorBin = $env:EDITOR_BIN
 if (-not $EditorBin) {
-    if (Get-Command antigravity -ErrorAction SilentlyContinue) {
-        $EditorBin = "antigravity"
-    } elseif (Get-Command code -ErrorAction SilentlyContinue) {
+    if (Get-Command code -ErrorAction SilentlyContinue) {
         $EditorBin = "code"
+    } elseif (Get-Command codium -ErrorAction SilentlyContinue) {
+        $EditorBin = "codium"
+    } elseif (Get-Command cursor -ErrorAction SilentlyContinue) {
+        $EditorBin = "cursor"
     } else {
-        Write-Error "Neither 'antigravity' nor 'code' found in PATH."
+        Write-Error "Neither 'code', 'codium', nor 'cursor' found in PATH."
         exit 1
     }
 }

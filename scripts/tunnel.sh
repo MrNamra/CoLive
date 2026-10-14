@@ -89,7 +89,7 @@ echo -e " \033[1mHEALTH ENDPOINT\033[0m      : \033[1;34m$TUNNEL_URL/health\033[
 echo -e "=========================================================\n"
 
 echo -e "\033[1mHow to use worldwide:\033[0m"
-echo -e "1. In VS Code / Antigravity Settings (settings.json), set:"
+echo -e "1. In VS Code Settings (settings.json), set:"
 echo -e "   \033[1;33m\"colive.serverUrl\": \"$WS_URL\"\033[0m"
 echo -e "   (Or run Command: \033[1mCoLive: Set Cloudflare Tunnel URL\033[0m and paste above)"
 echo -e "2. Click \033[1m'Share'\033[0m in your editor status bar to create a session."
