@@ -36,8 +36,17 @@ This document records architectural, protocol, and design decisions made during 
 - **Decision**: When an external process (git checkout, external code formatter) modifies a file on disk while participants are actively editing in memory, `HostPersistence` calculates a 3-way diff: `fastDiff(oldKnownDiskContent, newDiskContent)` and applies the edits to `Y.Text` inside a transaction tagged with origin `'disk'`.
 - **Rationale**: Directly diffing `currentYText` against `newDiskContent` would erase concurrent edits made by guests that had not yet been saved to disk. Diffing the disk transformation from old-to-new preserves both external changes and in-flight collaborative typing.
 
-## 8. RPC Message ID Echoing on Async Approvals & Handshakes
-- **Decision**: In the relay server, all asynchronous responses (`server.sessionCreated`, `server.joinAccepted`, `server.joinRejected`, and all `.res` payloads) preserve and echo the client's original `msg.id` envelope identifier.
-- **Rationale**: Enables `ConnectionManager.request<T>()` to correlate responses with pending promises across asynchronous multi-hop flows (such as human host join approval modals).
+## 9. Relay RPC Error Routing Expansion
+- **Decision**: In `packages/server/src/relay.ts`, RPC routing recognizes `(msg.type === 'error' && msg.id)` as an RPC response from the host and routes it back directly to the requesting guest.
+- **Rationale**: When a host rejects an RPC request (such as returning `{ type: 'error', id: req.id, code: 'FORBIDDEN' }`), the relay routes the error directly to the requesting guest instead of dropping it or timing out.
+
+## 10. Headless E2E Stress Testing Strategy
+- **Decision**: In `packages/e2e/tests/e2eCollab.test.ts`, 5,000 concurrent edits across 3 files are executed via batched editor transactions (`doc.transact(...)`) with 10 edits each across 500 transactions between Alice and Bob.
+- **Rationale**: Mirrors realistic editor keystroke bursts, conforms to token bucket rate limiters, exercises high-throughput CRDT sync convergence, and completes in ~1.5s in CI.
+
+## 11. Shared Terminal via Pseudoterminal & Batching
+- **Decision**: Use VS Code's `Pseudoterminal` API on both host and guest with `node:child_process.spawn`. Host maintains a 2,000-line ring buffer scrollback replayed to newly connected guests. Output is batched with a 16ms / 4KB threshold, and guests are read-only by default with a host permission toggle.
+- **Rationale**: Provides low-latency mirrored terminal output without requiring external terminal multiplexers, isolates guest inputs with strict host permission gating, and re-synchronizes terminal output instantly when guests join.
+
 
 
