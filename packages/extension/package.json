@@ -84,10 +84,25 @@
         "command": "colive.setParticipantPermission",
         "title": "CoLive: Change Permission",
         "category": "CoLive"
+      },
+      {
+        "command": "colive.followParticipant",
+        "title": "CoLive: Follow Participant",
+        "category": "CoLive"
+      },
+      {
+        "command": "colive.stopFollowing",
+        "title": "CoLive: Stop Following",
+        "category": "CoLive"
       }
     ],
     "menus": {
       "view/item/context": [
+        {
+          "command": "colive.followParticipant",
+          "when": "view == colive.participants && viewItem == participant",
+          "group": "navigation@1"
+        },
         {
           "command": "colive.setParticipantPermission",
           "when": "view == colive.participants && viewItem == participant",

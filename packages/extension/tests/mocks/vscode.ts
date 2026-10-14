@@ -110,6 +110,24 @@ export enum ProgressLocation {
   Notification = 15,
 }
 
+export enum OverviewRulerLane {
+  Left = 1,
+  Center = 2,
+  Right = 4,
+  Full = 7,
+}
+
+export enum TextEditorRevealType {
+  Default = 0,
+  InCenter = 1,
+  InCenterIfOutsideViewport = 2,
+  AtTop = 3,
+}
+
+export interface TextEditorDecorationType extends Disposable {
+  key: string;
+}
+
 export class ThemeIcon {
   constructor(public id: string, public color?: ThemeColor) {}
 }
@@ -321,9 +339,20 @@ export const onDidChangeTextDocumentEmitter = new EventEmitter<unknown>();
 export const onDidOpenTextDocumentEmitter = new EventEmitter<unknown>();
 export const onDidCloseTextDocumentEmitter = new EventEmitter<unknown>();
 export const onDidChangeActiveTextEditorEmitter = new EventEmitter<unknown>();
+export const onDidChangeTextEditorSelectionEmitter = new EventEmitter<unknown>();
+export const onDidChangeTextEditorVisibleRangesEmitter = new EventEmitter<unknown>();
+export enum StatusBarAlignment {
+  Left = 1,
+  Right = 2,
+}
 
 export const window = {
   activeTextEditor: undefined as unknown as { document: MockTextDocument } | undefined,
+  visibleTextEditors: [] as Array<unknown>,
+  createTextEditorDecorationType: (_options: unknown): TextEditorDecorationType => ({
+    key: `decoration_${Math.random().toString(36).slice(2)}`,
+    dispose: () => {},
+  }),
   createOutputChannel: (name: string) => ({
     name,
     appendLine: (_val: string) => {},
@@ -358,6 +387,15 @@ export const window = {
   },
   registerUriHandler: () => new Disposable(),
   onDidChangeActiveTextEditor: onDidChangeActiveTextEditorEmitter.event,
+  onDidChangeTextEditorSelection: onDidChangeTextEditorSelectionEmitter.event,
+  onDidChangeTextEditorVisibleRanges: onDidChangeTextEditorVisibleRangesEmitter.event,
+  showTextDocument: async (docOrUri: unknown, _opts?: unknown): Promise<unknown> => {
+    return {
+      document: docOrUri,
+      revealRange: () => {},
+      setDecorations: () => {},
+    };
+  },
 };
 
 export const workspace = {

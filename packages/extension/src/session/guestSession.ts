@@ -14,6 +14,9 @@ import { Logger } from '../logger.js';
 import { Strings } from '../strings.js';
 import { CoLiveFileSystemProvider } from '../guest/coliveFileSystem.js';
 import { SyncManager } from '../sync/SyncManager.js';
+import { PresenceManager } from '../presence/PresenceManager.js';
+import { RemoteCursorRenderer } from '../presence/RemoteCursorRenderer.js';
+import { FollowController } from '../presence/FollowController.js';
 import { SessionController } from './sessionController.js';
 
 export class GuestSession extends SessionController {
@@ -25,6 +28,9 @@ export class GuestSession extends SessionController {
   public hostInfo: ParticipantInfo | null = null;
   public fsProvider: CoLiveFileSystemProvider | null = null;
   public syncManager: SyncManager | null = null;
+  public presenceManager: PresenceManager | null = null;
+  public cursorRenderer: RemoteCursorRenderer | null = null;
+  public followController: FollowController | null = null;
   private fsRegistration: vscode.Disposable | null = null;
   private mountedFolderUri: vscode.Uri | null = null;
   private serverUrl: string;
@@ -138,6 +144,26 @@ export class GuestSession extends SessionController {
             Logger.warn('Virtual FileSystemProvider registration note', { fsErr });
           }
 
+          // Initialize presence and cursor rendering
+          this.presenceManager = new PresenceManager({
+            connection: this.connection!,
+            role: 'guest',
+            userId: this.guestId,
+            userName: this.displayName,
+            userColor: '#3CB44B',
+            syncManager: this.syncManager,
+          });
+          this.cursorRenderer = new RemoteCursorRenderer(
+            this.presenceManager,
+            this.guestId,
+            this.syncManager,
+          );
+          this.followController = new FollowController({
+            presenceManager: this.presenceManager,
+            connection: this.connection!,
+            role: 'guest',
+          });
+
           this.setState('active');
           this._onDidChangeParticipants.fire(this.getParticipants());
           vscode.window.showInformationMessage(Strings.joinApproved);
@@ -210,6 +236,19 @@ export class GuestSession extends SessionController {
   }
 
   public override dispose(): void {
+    if (this.followController) {
+      this.followController.dispose();
+      this.followController = null;
+    }
+    if (this.cursorRenderer) {
+      this.cursorRenderer.dispose();
+      this.cursorRenderer = null;
+    }
+    if (this.presenceManager) {
+      this.presenceManager.dispose();
+      this.presenceManager = null;
+    }
+
     if (this.syncManager) {
       this.syncManager.dispose();
       this.syncManager = null;

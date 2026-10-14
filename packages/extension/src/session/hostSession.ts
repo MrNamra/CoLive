@@ -13,6 +13,9 @@ import { Logger } from '../logger.js';
 import { Strings } from '../strings.js';
 import { HostFileService } from '../host/fileService.js';
 import { SyncManager } from '../sync/SyncManager.js';
+import { PresenceManager } from '../presence/PresenceManager.js';
+import { RemoteCursorRenderer } from '../presence/RemoteCursorRenderer.js';
+import { FollowController } from '../presence/FollowController.js';
 import { SessionController } from './sessionController.js';
 
 export class HostSession extends SessionController {
@@ -22,6 +25,9 @@ export class HostSession extends SessionController {
   public expiresAt = 0;
   public fileService: HostFileService | null = null;
   public syncManager: SyncManager | null = null;
+  public presenceManager: PresenceManager | null = null;
+  public cursorRenderer: RemoteCursorRenderer | null = null;
+  public followController: FollowController | null = null;
   private serverUrl: string;
   private displayName: string;
   private requireApproval: boolean;
@@ -87,6 +93,29 @@ export class HostSession extends SessionController {
 
     // Initialize host sync manager
     this.syncManager = new SyncManager({
+      connection: this.connection,
+      role: 'host',
+      workspaceRoot: this.workspaceRoot,
+    });
+
+    // Initialize presence and cursor rendering
+    this.presenceManager = new PresenceManager({
+      connection: this.connection,
+      role: 'host',
+      userId: 'host',
+      userName: this.displayName,
+      userColor: '#E6194B',
+      workspaceRoot: this.workspaceRoot,
+      syncManager: this.syncManager,
+    });
+    this.cursorRenderer = new RemoteCursorRenderer(
+      this.presenceManager,
+      'host',
+      this.syncManager,
+      this.workspaceRoot,
+    );
+    this.followController = new FollowController({
+      presenceManager: this.presenceManager,
       connection: this.connection,
       role: 'host',
       workspaceRoot: this.workspaceRoot,
@@ -251,6 +280,18 @@ export class HostSession extends SessionController {
   }
 
   public override dispose(): void {
+    if (this.followController) {
+      this.followController.dispose();
+      this.followController = null;
+    }
+    if (this.cursorRenderer) {
+      this.cursorRenderer.dispose();
+      this.cursorRenderer = null;
+    }
+    if (this.presenceManager) {
+      this.presenceManager.dispose();
+      this.presenceManager = null;
+    }
     if (this.syncManager) {
       this.syncManager.dispose();
       this.syncManager = null;

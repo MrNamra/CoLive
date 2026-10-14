@@ -149,6 +149,42 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
   );
 
+  context.subscriptions.push(
+    vscode.commands.registerCommand('colive.followParticipant', async (item?: ParticipantTreeItem) => {
+      let targetId = item?.participant.id;
+      let targetName = item?.participant.displayName;
+      if (!targetId && activeSession) {
+        const participants = activeSession.getParticipants().filter((p) => p.status === 'active');
+        if (participants.length === 0) return;
+        const choice = await vscode.window.showQuickPick(
+          participants.map((p) => ({ label: p.displayName, description: p.role, participant: p })),
+          { placeHolder: 'Select a participant to follow' },
+        );
+        if (choice) {
+          targetId = choice.participant.id;
+          targetName = choice.participant.displayName;
+        }
+      }
+      if (!targetId || !targetName) return;
+
+      if (activeSession instanceof HostSession && activeSession.followController) {
+        activeSession.followController.followParticipant(targetId, targetName);
+      } else if (activeSession instanceof GuestSession && activeSession.followController) {
+        activeSession.followController.followParticipant(targetId, targetName);
+      }
+    }),
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('colive.stopFollowing', () => {
+      if (activeSession instanceof HostSession && activeSession.followController) {
+        activeSession.followController.stopFollowing();
+      } else if (activeSession instanceof GuestSession && activeSession.followController) {
+        activeSession.followController.stopFollowing();
+      }
+    }),
+  );
+
   Logger.info('CoLive extension activated successfully.');
 }
 
@@ -182,6 +218,7 @@ async function startHostSession(): Promise<void> {
     participantsTree?.setSession(hostSession);
 
     await hostSession.start();
+    participantsTree?.setSession(hostSession, hostSession.presenceManager, hostSession.followController);
   } catch (err) {
     Logger.error('Failed to start host session', err);
     vscode.window.showErrorMessage(`Failed to start CoLive session: ${err instanceof Error ? err.message : String(err)}`);
@@ -225,6 +262,7 @@ async function joinSessionByIdAndSecret(sessionId: string, secret: string): Prom
     participantsTree?.setSession(guestSession);
 
     await guestSession.join();
+    participantsTree?.setSession(guestSession, guestSession.presenceManager, guestSession.followController);
   } catch (err) {
     Logger.error('Failed to join session', err);
     vscode.window.showErrorMessage(`Failed to join CoLive session: ${err instanceof Error ? err.message : String(err)}`);
