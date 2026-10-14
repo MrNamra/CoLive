@@ -370,6 +370,14 @@ export const window = {
   createTreeView: () => ({
     dispose: () => {},
   }),
+  createTerminal: (options: any) => ({
+    name: typeof options === 'string' ? options : options.name,
+    pty: typeof options === 'object' ? options.pty : undefined,
+    show: () => {},
+    hide: () => {},
+    dispose: () => {},
+    sendText: (_text: string) => {},
+  }),
   showInformationMessage: async () => undefined,
   showWarningMessage: async () => undefined,
   showErrorMessage: async () => undefined,

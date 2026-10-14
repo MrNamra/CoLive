@@ -19,6 +19,7 @@ import { RemoteCursorRenderer } from '../presence/RemoteCursorRenderer.js';
 import { FollowController } from '../presence/FollowController.js';
 import { CommentsManager } from '../comments/CommentsManager.js';
 import { GuestDiagnosticsReceiver } from '../diagnostics/diagnosticsService.js';
+import { GuestTerminalService } from '../terminal/index.js';
 import { SessionController } from './sessionController.js';
 
 export class GuestSession extends SessionController {
@@ -35,6 +36,7 @@ export class GuestSession extends SessionController {
   public followController: FollowController | null = null;
   public commentsManager: CommentsManager | null = null;
   public diagnosticsReceiver: GuestDiagnosticsReceiver | null = null;
+  public terminalService: GuestTerminalService | null = null;
   private fsRegistration: vscode.Disposable | null = null;
   private mountedFolderUri: vscode.Uri | null = null;
   private serverUrl: string;
@@ -187,6 +189,10 @@ export class GuestSession extends SessionController {
             folderName,
           );
 
+          // Initialize guest terminal service
+          this.terminalService = new GuestTerminalService(this.connection!);
+          this.terminalService.setReadOnly(this.permission === 'readOnly');
+
           this.setState('active');
           this._onDidChangeParticipants.fire(this.getParticipants());
           vscode.window.showInformationMessage(Strings.joinApproved);
@@ -259,6 +265,10 @@ export class GuestSession extends SessionController {
   }
 
   public override dispose(): void {
+    if (this.terminalService) {
+      this.terminalService.dispose();
+      this.terminalService = null;
+    }
     if (this.diagnosticsReceiver) {
       this.diagnosticsReceiver.dispose();
       this.diagnosticsReceiver = null;

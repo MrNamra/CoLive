@@ -652,13 +652,33 @@ export class RelayServer {
       return;
     }
 
+    // Terminal input/resize: Guest -> Host
+    if (msg.type === 'terminal.input' || msg.type === 'terminal.resize') {
+      if (client.role === 'guest') {
+        const participant = client.participantId ? session.participants.get(client.participantId) : undefined;
+        if (msg.type === 'terminal.input' && participant?.permission === 'readOnly') {
+          this.sendJson(client, {
+            v: PROTOCOL_VERSION,
+            type: 'error',
+            code: 'READ_ONLY',
+            message: 'Terminal write access denied in read-only mode',
+          });
+          return;
+        }
+        this.forwardRpcToHost(session, client, msg);
+      }
+      return;
+    }
+
     // Broadcast messages to entire session
     if (
       msg.type === 'chat.message' ||
       msg.type === 'fs.watchEvent' ||
       msg.type === 'doc.saved' ||
       msg.type === 'diagnostics.update' ||
-      msg.type === 'comment.op'
+      msg.type === 'comment.op' ||
+      msg.type === 'terminal.data' ||
+      msg.type === 'terminal.close'
     ) {
       this.broadcastToSession(session, msg);
       return;

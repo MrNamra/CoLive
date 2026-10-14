@@ -18,6 +18,7 @@ import { RemoteCursorRenderer } from '../presence/RemoteCursorRenderer.js';
 import { FollowController } from '../presence/FollowController.js';
 import { CommentsManager } from '../comments/CommentsManager.js';
 import { HostDiagnosticsBroadcaster } from '../diagnostics/diagnosticsService.js';
+import { HostTerminalService } from '../terminal/index.js';
 import { SessionController } from './sessionController.js';
 
 export class HostSession extends SessionController {
@@ -32,6 +33,7 @@ export class HostSession extends SessionController {
   public followController: FollowController | null = null;
   public commentsManager: CommentsManager | null = null;
   public diagnosticsBroadcaster: HostDiagnosticsBroadcaster | null = null;
+  public terminalService: HostTerminalService | null = null;
   private serverUrl: string;
   private displayName: string;
   private requireApproval: boolean;
@@ -140,6 +142,12 @@ export class HostSession extends SessionController {
 
     // Initialize diagnostics broadcaster
     this.diagnosticsBroadcaster = new HostDiagnosticsBroadcaster(
+      this.connection,
+      this.workspaceRoot,
+    );
+
+    // Initialize host terminal service
+    this.terminalService = new HostTerminalService(
       this.connection,
       this.workspaceRoot,
     );
@@ -303,6 +311,10 @@ export class HostSession extends SessionController {
   }
 
   public override dispose(): void {
+    if (this.terminalService) {
+      this.terminalService.dispose();
+      this.terminalService = null;
+    }
     if (this.diagnosticsBroadcaster) {
       this.diagnosticsBroadcaster.dispose();
       this.diagnosticsBroadcaster = null;

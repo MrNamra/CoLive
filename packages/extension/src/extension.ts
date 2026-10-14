@@ -299,6 +299,47 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
   );
 
+  context.subscriptions.push(
+    vscode.commands.registerCommand('colive.shareTerminal', async () => {
+      if (!activeSession || activeSession.getState() !== 'active') {
+        vscode.window.showInformationMessage('You must be in an active CoLive session to use shared terminal.');
+        return;
+      }
+
+      if (activeSession instanceof HostSession && activeSession.terminalService) {
+        activeSession.terminalService.shareTerminal();
+        vscode.window.showInformationMessage('CoLive: Shared terminal started on host. Output is mirrored to guests.');
+      } else if (activeSession instanceof GuestSession && activeSession.terminalService) {
+        try {
+          await activeSession.terminalService.openSharedTerminal();
+        } catch (err: unknown) {
+          vscode.window.showErrorMessage(`Failed to open shared terminal: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+    }),
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('colive.toggleTerminalWrite', async () => {
+      if (!(activeSession instanceof HostSession) || !activeSession.terminalService) {
+        vscode.window.showInformationMessage('Only the host can toggle terminal write permissions.');
+        return;
+      }
+
+      const activeTerms = activeSession.terminalService.getActiveTerminals();
+      if (activeTerms.length === 0) {
+        vscode.window.showInformationMessage('No active shared terminals found.');
+        return;
+      }
+
+      const term = activeTerms[0]!;
+      const allowed = activeSession.terminalService.toggleGuestWrite(term.terminalId);
+      vscode.window.showInformationMessage(
+        `CoLive: Guests ${allowed ? 'can now type in' : 'are now read-only in'} the shared terminal.`,
+      );
+    }),
+  );
+
   Logger.info('CoLive extension activated successfully.');
 }
 

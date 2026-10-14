@@ -128,6 +128,16 @@
         "command": "colive.copyLineLink",
         "title": "CoLive: Copy Link to this Line",
         "category": "CoLive"
+      },
+      {
+        "command": "colive.shareTerminal",
+        "title": "CoLive: Share Terminal with Session",
+        "category": "CoLive"
+      },
+      {
+        "command": "colive.toggleTerminalWrite",
+        "title": "CoLive: Toggle Terminal Guest Permissions",
+        "category": "CoLive"
       }
     ],
     "keybindings": [
@@ -145,6 +155,11 @@
         "command": "colive.followParticipant",
         "key": "ctrl+alt+l f",
         "mac": "cmd+alt+l f"
+      },
+      {
+        "command": "colive.shareTerminal",
+        "key": "ctrl+alt+l t",
+        "mac": "cmd+alt+l t"
       }
     ],
     "menus": {
