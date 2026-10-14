@@ -394,9 +394,14 @@ async function startHostSession(): Promise<void> {
   let hostLocalServerUrl = config.serverUrl;
   let publicServerUrl: string | undefined = undefined;
 
-  // Auto-run Cloudflare Tunnel for worldwide collaboration if configured to localhost and cloudflared is installed
+  const isLocalOrTryCloudflare =
+    hostLocalServerUrl === 'ws://localhost:8787/ws' ||
+    hostLocalServerUrl.includes('127.0.0.1') ||
+    hostLocalServerUrl.includes('trycloudflare.com');
+
+  // Auto-run Cloudflare Tunnel for worldwide collaboration if configured to localhost/trycloudflare and cloudflared is installed
   if (
-    (hostLocalServerUrl === 'ws://localhost:8787/ws' || hostLocalServerUrl.includes('127.0.0.1')) &&
+    isLocalOrTryCloudflare &&
     tunnelManager &&
     (await tunnelManager.isCloudflaredAvailable())
   ) {
@@ -421,9 +426,9 @@ async function startHostSession(): Promise<void> {
     );
   }
 
-  // If Cloudflare tunnel is active, host connects locally to 127.0.0.1:8787 to avoid
-  // internet round-trip and Cloudflare 530 DNS propagation delay, while guests connect via tunnel
-  if (publicServerUrl) {
+  // Host hosting on this machine MUST connect locally to 127.0.0.1:8787.
+  // This guarantees 0ms latency, zero internet hops, and completely prevents ENOTFOUND and 530 errors!
+  if (isLocalOrTryCloudflare || publicServerUrl) {
     hostLocalServerUrl = 'ws://127.0.0.1:8787/ws';
   }
 

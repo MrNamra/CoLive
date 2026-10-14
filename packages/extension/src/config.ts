@@ -20,6 +20,12 @@ export function getExtensionConfig(): ExtensionConfig {
   const cfg = vscode.workspace.getConfiguration('colive');
   let serverUrl = cfg.get<string>('serverUrl', 'ws://localhost:8787/ws');
 
+  // trycloudflare.com URLs are ephemeral and die when the tunnel closes.
+  // Never persist dead trycloudflare.com URLs as default relay.
+  if (serverUrl.includes('trycloudflare.com')) {
+    serverUrl = 'ws://localhost:8787/ws';
+  }
+
   // Auto-discover local Cloudflare .tunnel-url if configured to default localhost
   if (serverUrl === 'ws://localhost:8787/ws') {
     const candidatePaths: string[] = [];
