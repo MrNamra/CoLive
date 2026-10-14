@@ -12,6 +12,9 @@ const buildOptions = {
   format: 'cjs',
   platform: 'node',
   target: 'node20',
+  define: {
+    'import.meta.url': '""',
+  },
   sourcemap: !isProduction,
   minify: isProduction,
   logLevel: 'info',

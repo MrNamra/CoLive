@@ -10,21 +10,26 @@ import { ParticipantsTreeProvider, ParticipantTreeItem } from './ui/participants
 import { StatusBarManager } from './ui/statusBar.js';
 import { ChatViewProvider } from './chat/chatViewProvider.js';
 import { CommentsTreeProvider } from './comments/commentsTree.js';
+import { TunnelManager } from './tunnel/TunnelManager.js';
 
 let activeSession: SessionController | null = null;
 let statusBar: StatusBarManager | null = null;
 let participantsTree: ParticipantsTreeProvider | null = null;
 let commentsTree: CommentsTreeProvider | null = null;
 let chatProvider: ChatViewProvider | null = null;
+let tunnelManager: TunnelManager | null = null;
 
 export function activate(context: vscode.ExtensionContext): void {
   Logger.initialize();
   Logger.info('CoLive extension activating...');
 
+  tunnelManager = new TunnelManager();
   statusBar = new StatusBarManager();
   participantsTree = new ParticipantsTreeProvider();
   commentsTree = new CommentsTreeProvider();
   chatProvider = new ChatViewProvider(context.extensionUri);
+
+  context.subscriptions.push(tunnelManager);
 
   context.subscriptions.push(statusBar);
   context.subscriptions.push(participantsTree);
@@ -386,12 +391,41 @@ async function startHostSession(): Promise<void> {
   }
 
   const config = getExtensionConfig();
+  let targetServerUrl = config.serverUrl;
+
+  // Auto-run Cloudflare Tunnel for worldwide collaboration if configured to localhost and cloudflared is installed
+  if (
+    (targetServerUrl === 'ws://localhost:8787/ws' || targetServerUrl.includes('127.0.0.1')) &&
+    tunnelManager &&
+    (await tunnelManager.isCloudflaredAvailable())
+  ) {
+    await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: 'CoLive: Establishing Worldwide Cloudflare Tunnel...',
+        cancellable: false,
+      },
+      async (progress) => {
+        progress.report({ message: 'Starting relay & Cloudflare tunnel...' });
+        try {
+          targetServerUrl = await tunnelManager!.startTunnel(8787);
+          progress.report({ message: 'Connected to Cloudflare worldwide edge!' });
+        } catch (err) {
+          Logger.warn('Failed to auto-start Cloudflare tunnel, falling back to local relay', err);
+          vscode.window.showWarningMessage(
+            'Could not auto-start Cloudflare tunnel; falling back to local relay server.',
+          );
+        }
+      },
+    );
+  }
+
   const displayName = await resolveDisplayName();
 
   try {
     const rootPath = folders[0]!.uri.fsPath;
     const hostSession = new HostSession(
-      config.serverUrl,
+      targetServerUrl,
       displayName,
       rootPath,
       config.excludePatterns,
@@ -483,6 +517,7 @@ async function endCurrentSession(): Promise<void> {
   if (choice === button) {
     await activeSession.endSession();
     activeSession = null;
+    tunnelManager?.stopTunnel();
     statusBar?.setSession(null);
     participantsTree?.setSession(null);
     commentsTree?.setCommentsManager(null);
@@ -497,6 +532,7 @@ export function deactivate(): void {
     activeSession.endSession();
     activeSession = null;
   }
+  tunnelManager?.stopTunnel();
   statusBar?.dispose();
   participantsTree?.dispose();
   commentsTree?.dispose();
