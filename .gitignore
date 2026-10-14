@@ -3,7 +3,7 @@ dist/
 out/
 build/
 *.vsix
-.vscode-test/
+**/.vscode-test/
 *.tsbuildinfo
 coverage/
 .dev/
