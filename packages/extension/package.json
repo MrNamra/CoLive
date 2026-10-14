@@ -64,8 +64,106 @@
         "command": "colive.joinSession",
         "title": "CoLive: Join Session",
         "category": "CoLive"
+      },
+      {
+        "command": "colive.endSession",
+        "title": "CoLive: End / Leave Session",
+        "category": "CoLive"
+      },
+      {
+        "command": "colive.copyInvite",
+        "title": "CoLive: Copy Invite Link",
+        "category": "CoLive"
+      },
+      {
+        "command": "colive.kickParticipant",
+        "title": "CoLive: Remove Participant",
+        "category": "CoLive"
+      },
+      {
+        "command": "colive.setParticipantPermission",
+        "title": "CoLive: Change Permission",
+        "category": "CoLive"
       }
-    ]
+    ],
+    "menus": {
+      "view/item/context": [
+        {
+          "command": "colive.setParticipantPermission",
+          "when": "view == colive.participants && viewItem == participant",
+          "group": "inline@1"
+        },
+        {
+          "command": "colive.kickParticipant",
+          "when": "view == colive.participants && viewItem == participant",
+          "group": "inline@2"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "CoLive",
+      "properties": {
+        "colive.serverUrl": {
+          "type": "string",
+          "default": "ws://localhost:8787/ws",
+          "description": "WebSocket URL for the CoLive relay server (use wss:// in production)."
+        },
+        "colive.displayName": {
+          "type": "string",
+          "default": "",
+          "description": "Your display name in collaboration sessions (defaults to Git user or OS username)."
+        },
+        "colive.excludePatterns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            ".git/**",
+            "node_modules/**",
+            ".env*",
+            "**/*.pem",
+            "**/*.key",
+            "**/id_rsa*",
+            "dist/**",
+            "out/**",
+            ".vscode/**"
+          ],
+          "description": "Glob patterns for sensitive or ignored files hidden from collaboration sessions."
+        },
+        "colive.maxFileSizeMB": {
+          "type": "number",
+          "default": 5,
+          "description": "Maximum file size in MB that can be transferred or opened in a session."
+        },
+        "colive.defaultGuestPermission": {
+          "type": "string",
+          "enum": ["readWrite", "readOnly"],
+          "default": "readWrite",
+          "description": "Default permission granted to new guests."
+        },
+        "colive.requireJoinApproval": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether host approval is required for guests to join."
+        },
+        "colive.allowReadOnlyComments": {
+          "type": "boolean",
+          "default": true,
+          "description": "Allow read-only guests to create and reply to inline comments."
+        },
+        "colive.userColor": {
+          "type": "string",
+          "default": "",
+          "description": "Custom presence color (hex string)."
+        },
+        "colive.e2ee": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable End-to-End Encryption for all session content."
+        }
+      }
+    }
   },
   "scripts": {
     "vscode:prepublish": "npm run build",
