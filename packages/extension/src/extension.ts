@@ -153,62 +153,121 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('colive.setParticipantPermission', async (item?: ParticipantTreeItem) => {
+    vscode.commands.registerCommand('colive.setParticipantPermission', async (item?: ParticipantTreeItem | string) => {
       if (!(activeSession instanceof HostSession)) {
         vscode.window.showErrorMessage('Only the host can change participant permissions.');
         return;
       }
 
-      const guestId = item?.participant.id;
-      if (!guestId || item?.participant.role === 'host') {
-        return;
+      let guestId: string | undefined;
+      let guestName: string | undefined;
+
+      if (typeof item === 'string') {
+        guestId = item;
+        const p = activeSession.getParticipants().find((x) => x.id === item);
+        if (p?.role === 'host') return;
+        guestName = p?.displayName;
+      } else if (item && typeof item === 'object' && 'participant' in item && item.participant) {
+        if (item.participant.role === 'host') return;
+        guestId = item.participant.id;
+        guestName = item.participant.displayName;
       }
 
+      if (!guestId) {
+        const guests = activeSession.getParticipants().filter((p) => p.role !== 'host');
+        if (guests.length === 0) {
+          vscode.window.showInformationMessage('No guests in the session.');
+          return;
+        }
+        const picked = await vscode.window.showQuickPick(
+          guests.map((g) => ({ label: g.displayName, participant: g })),
+          { placeHolder: 'Select a participant to change permission' },
+        );
+        if (!picked) return;
+        guestId = picked.participant.id;
+        guestName = picked.participant.displayName;
+      }
+
+      const displayName = guestName || guestId;
       const choice = await vscode.window.showQuickPick(
         [
           { label: 'Read & write', description: 'Can view and edit workspace files', value: 'readWrite' as const },
           { label: 'Terminal access', description: 'Can edit files and execute in shared terminal', value: 'terminalAccess' as const },
           { label: 'Read-only', description: 'Can only view files and follow host', value: 'readOnly' as const },
         ],
-        { placeHolder: `Set permission for ${item.participant.displayName}` },
+        { placeHolder: `Set permission for ${displayName}` },
       );
 
       if (choice) {
         await activeSession.setParticipantPermission(guestId, choice.value);
-        vscode.window.showInformationMessage(`Permission for ${item.participant.displayName} set to ${choice.label}.`);
+        vscode.window.showInformationMessage(`Permission for ${displayName} set to ${choice.label}.`);
       }
     }),
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('colive.kickParticipant', async (item?: ParticipantTreeItem) => {
+    vscode.commands.registerCommand('colive.kickParticipant', async (item?: ParticipantTreeItem | string) => {
       if (!(activeSession instanceof HostSession)) {
         vscode.window.showErrorMessage('Only the host can remove participants.');
         return;
       }
 
-      const guestId = item?.participant.id;
-      if (!guestId || item?.participant.role === 'host') {
-        return;
+      let guestId: string | undefined;
+      let guestName: string | undefined;
+
+      if (typeof item === 'string') {
+        guestId = item;
+        const p = activeSession.getParticipants().find((x) => x.id === item);
+        if (p?.role === 'host') return;
+        guestName = p?.displayName;
+      } else if (item && typeof item === 'object' && 'participant' in item && item.participant) {
+        if (item.participant.role === 'host') return;
+        guestId = item.participant.id;
+        guestName = item.participant.displayName;
       }
 
+      if (!guestId) {
+        const guests = activeSession.getParticipants().filter((p) => p.role !== 'host');
+        if (guests.length === 0) {
+          vscode.window.showInformationMessage('No guests in the session.');
+          return;
+        }
+        const picked = await vscode.window.showQuickPick(
+          guests.map((g) => ({ label: g.displayName, participant: g })),
+          { placeHolder: 'Select a participant to remove' },
+        );
+        if (!picked) return;
+        guestId = picked.participant.id;
+        guestName = picked.participant.displayName;
+      }
+
+      const displayName = guestName || guestId;
       const confirm = await vscode.window.showWarningMessage(
-        `Remove "${item.participant.displayName}" from the session?`,
+        `Remove "${displayName}" from the session?`,
         { modal: true },
         'Remove',
       );
 
       if (confirm === 'Remove') {
         await activeSession.kickParticipant(guestId);
-        vscode.window.showInformationMessage(`Removed ${item.participant.displayName} from session.`);
+        vscode.window.showInformationMessage(`Removed ${displayName} from session.`);
       }
     }),
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('colive.followParticipant', async (item?: ParticipantTreeItem) => {
-      let targetId = item?.participant.id;
-      let targetName = item?.participant.displayName;
+    vscode.commands.registerCommand('colive.followParticipant', async (item?: ParticipantTreeItem | string, nameArg?: string) => {
+      let targetId: string | undefined;
+      let targetName: string | undefined;
+
+      if (typeof item === 'string') {
+        targetId = item;
+        targetName = nameArg || activeSession?.getParticipants().find((p) => p.id === item)?.displayName;
+      } else if (item && typeof item === 'object' && 'participant' in item && item.participant) {
+        targetId = item.participant.id;
+        targetName = item.participant.displayName;
+      }
+
       if (!targetId && activeSession) {
         const participants = activeSession.getParticipants().filter((p) => p.status === 'active');
         if (participants.length === 0) return;
