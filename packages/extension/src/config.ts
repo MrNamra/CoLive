@@ -1,7 +1,5 @@
 import * as vscode from 'vscode';
 import os from 'node:os';
-import fs from 'node:fs';
-import path from 'node:path';
 import { Permission } from '@colive/protocol';
 
 export interface ExtensionConfig {

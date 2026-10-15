@@ -9,7 +9,6 @@ import {
   ServerJoinRejected,
 } from '@colive/protocol';
 import { ConnectionManager } from '../connection.js';
-import { buildPasteCode } from '../invite.js';
 import { Logger } from '../logger.js';
 import { Strings } from '../strings.js';
 import { CoLiveFileSystemProvider } from '../guest/coliveFileSystem.js';

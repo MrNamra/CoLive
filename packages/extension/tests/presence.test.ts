@@ -1,10 +1,10 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import * as Y from 'yjs';
 import * as vscode from 'vscode';
 import { trailingThrottle } from '../src/presence/throttle.js';
 import { clampPositionToDocument, RemoteCursorRenderer } from '../src/presence/RemoteCursorRenderer.js';
 import { FollowController } from '../src/presence/FollowController.js';
-import { PresenceManager, UserPresenceState } from '../src/presence/PresenceManager.js';
+import { UserPresenceState } from '../src/presence/PresenceManager.js';
 
 describe('Milestone 7: Presence, Remote Cursors, Follow Mode', () => {
   describe('throttle utility (trailingThrottle)', () => {
@@ -188,11 +188,11 @@ describe('Milestone 7: Presence, Remote Cursors, Follow Mode', () => {
         statesMap.set(u.user.id, u);
       }
 
-      let presenceCallback: (() => void) | null = null;
+      let _presenceCallback: (() => void) | null = null;
       const fakePresenceManager: any = {
         getStates: () => statesMap,
         onDidChangePresence: (cb: () => void) => {
-          presenceCallback = cb;
+          _presenceCallback = cb;
           return { dispose: () => {} };
         },
       };
@@ -202,7 +202,7 @@ describe('Milestone 7: Presence, Remote Cursors, Follow Mode', () => {
         document: {
           uri: vscode.Uri.file('/workspace/src/index.ts'),
           lineCount: 20,
-          lineAt: (l: number) => ({ text: 'sample line text', range: { end: { character: 16 } } }),
+          lineAt: (_l: number) => ({ text: 'sample line text', range: { end: { character: 16 } } }),
         },
         setDecorations: setDecorationsSpy,
       };

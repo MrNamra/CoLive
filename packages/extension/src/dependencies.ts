@@ -1,7 +1,5 @@
 import * as vscode from 'vscode';
 import os from 'node:os';
-import path from 'node:path';
-import fs from 'node:fs';
 import { Logger } from './logger.js';
 import { TunnelManager } from './tunnel/TunnelManager.js';
 
@@ -153,10 +151,6 @@ export function formatFriendlyErrorMessage(err: unknown, contextUrl?: string): s
 
   if (raw.includes('ETIMEDOUT') || raw.includes('timed out')) {
     return `Connection timed out while reaching ${contextUrl || 'collaboration server'}. Please check your network connection or firewall.`;
-  }
-
-  if (raw.includes('folderName')) {
-    return 'Workspace initialization note: Virtual folder mounting refreshed.';
   }
 
   return raw;

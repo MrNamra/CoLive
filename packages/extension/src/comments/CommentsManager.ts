@@ -6,8 +6,6 @@ import {
   CommentThreadData,
   normalizeWorkspacePath,
   Permission,
-  PROTOCOL_VERSION,
-  Range,
   Role,
 } from '@colive/protocol';
 import { ConnectionManager } from '../connection.js';
