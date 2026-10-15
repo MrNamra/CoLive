@@ -34,12 +34,22 @@ export function cleanupColiveWorkspaceFolders(): void {
   }
 }
 
+export function updateSessionContext(session: SessionController | null): void {
+  const inSession = session !== null && session.getState() === 'active';
+  const isGuest = session instanceof GuestSession;
+  const isHost = session instanceof HostSession;
+  vscode.commands.executeCommand('setContext', 'colive.inSession', inSession);
+  vscode.commands.executeCommand('setContext', 'colive.isGuest', inSession && isGuest);
+  vscode.commands.executeCommand('setContext', 'colive.isHost', inSession && isHost);
+}
+
 export function activate(context: vscode.ExtensionContext): void {
   Logger.initialize();
   Logger.info('CoLive extension activating...');
 
   // Prune any lingering virtual workspace folders from previous sessions or window reload
   cleanupColiveWorkspaceFolders();
+  updateSessionContext(null);
 
   tunnelManager = new TunnelManager(context.globalStorageUri.fsPath);
   statusBar = new StatusBarManager();
@@ -592,11 +602,13 @@ async function startHostSession(): Promise<void> {
     participantsTree?.setSession(hostSession);
 
     await hostSession.start();
+    updateSessionContext(hostSession);
     participantsTree?.setSession(hostSession, hostSession.presenceManager, hostSession.followController);
     commentsTree?.setCommentsManager(hostSession.commentsManager);
     chatProvider?.setSession(hostSession.connection, 'host', displayName);
   } catch (err) {
     Logger.error('Failed to start host session', err);
+    updateSessionContext(null);
     const friendlyError = formatFriendlyErrorMessage(err, hostLocalServerUrl);
     vscode.window
       .showErrorMessage(
@@ -664,11 +676,13 @@ async function joinSessionByIdAndSecret(
     participantsTree?.setSession(guestSession);
 
     await guestSession.join();
+    updateSessionContext(guestSession);
     participantsTree?.setSession(guestSession, guestSession.presenceManager, guestSession.followController);
     commentsTree?.setCommentsManager(guestSession.commentsManager);
     chatProvider?.setSession(guestSession.connection, guestSession.guestId, displayName);
   } catch (err) {
     Logger.error('Failed to join session', err);
+    updateSessionContext(null);
     const friendlyError = formatFriendlyErrorMessage(err, targetServerUrl);
     vscode.window
       .showErrorMessage(
@@ -702,6 +716,7 @@ async function endCurrentSession(): Promise<void> {
   if (choice === button) {
     await activeSession.endSession();
     activeSession = null;
+    updateSessionContext(null);
     cleanupColiveWorkspaceFolders();
     tunnelManager?.stopTunnel();
     statusBar?.setSession(null);
@@ -718,6 +733,7 @@ export function deactivate(): void {
     activeSession.endSession();
     activeSession = null;
   }
+  updateSessionContext(null);
   cleanupColiveWorkspaceFolders();
   tunnelManager?.stopTunnel();
   statusBar?.dispose();

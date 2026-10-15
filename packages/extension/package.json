@@ -68,7 +68,7 @@
     "viewsWelcome": [
       {
         "view": "colive.participants",
-        "contents": "Share your workspace or join an active session to collaborate in real-time.\n[Share Workspace](command:colive.startSession)\n[Join Session](command:colive.joinSession)\n\n[Open Shared Terminal](command:colive.shareTerminal)\n[Show Process & Output Logs](command:colive.showLogs)"
+        "contents": "Share your workspace or join an active session to collaborate in real-time.\n[Share Workspace](command:colive.startSession)\n[Join Session](command:colive.joinSession)"
       }
     ],
     "commands": [
@@ -89,8 +89,9 @@
       },
       {
         "command": "colive.endSession",
-        "title": "CoLive: End / Leave Session",
-        "category": "CoLive"
+        "title": "CoLive: Disconnect / Leave Session",
+        "category": "CoLive",
+        "icon": "$(debug-disconnect)"
       },
       {
         "command": "colive.showLogs",
@@ -197,18 +198,23 @@
     "menus": {
       "view/title": [
         {
+          "command": "colive.endSession",
+          "when": "view == colive.participants && colive.inSession",
+          "group": "navigation@0"
+        },
+        {
           "command": "colive.showLogs",
           "when": "view == colive.participants",
           "group": "navigation@1"
         },
         {
           "command": "colive.shareTerminal",
-          "when": "view == colive.participants",
+          "when": "view == colive.participants && colive.inSession && colive.isHost",
           "group": "navigation@2"
         },
         {
           "command": "colive.toggleTerminalWrite",
-          "when": "view == colive.participants",
+          "when": "view == colive.participants && colive.inSession && colive.isHost",
           "group": "navigation@3"
         }
       ],

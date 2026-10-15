@@ -1,8 +1,21 @@
 import * as vscode from 'vscode';
 import { ParticipantInfo } from '@colive/protocol';
 import { SessionController } from '../session/sessionController.js';
+import { GuestSession } from '../session/guestSession.js';
 import { PresenceManager, UserPresenceState } from '../presence/PresenceManager.js';
 import { FollowController } from '../presence/FollowController.js';
+
+export class ActionTreeItem extends vscode.TreeItem {
+  constructor(label: string, icon: string, commandId: string, description?: string) {
+    super(label, vscode.TreeItemCollapsibleState.None);
+    this.iconPath = new vscode.ThemeIcon(icon);
+    this.description = description;
+    this.command = {
+      command: commandId,
+      title: label,
+    };
+  }
+}
 
 export class ParticipantTreeItem extends vscode.TreeItem {
   public participant: ParticipantInfo;
@@ -51,8 +64,8 @@ export class ParticipantTreeItem extends vscode.TreeItem {
   }
 }
 
-export class ParticipantsTreeProvider implements vscode.TreeDataProvider<ParticipantTreeItem>, vscode.Disposable {
-  private _onDidChangeTreeData = new vscode.EventEmitter<ParticipantTreeItem | undefined | void>();
+export class ParticipantsTreeProvider implements vscode.TreeDataProvider<vscode.TreeItem>, vscode.Disposable {
+  private _onDidChangeTreeData = new vscode.EventEmitter<vscode.TreeItem | undefined | void>();
   public readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
   private currentSession: SessionController | null = null;
@@ -93,11 +106,11 @@ export class ParticipantsTreeProvider implements vscode.TreeDataProvider<Partici
     this._onDidChangeTreeData.fire();
   }
 
-  public getTreeItem(element: ParticipantTreeItem): vscode.TreeItem {
+  public getTreeItem(element: vscode.TreeItem): vscode.TreeItem {
     return element;
   }
 
-  public getChildren(): Thenable<ParticipantTreeItem[]> {
+  public getChildren(): Thenable<vscode.TreeItem[]> {
     if (!this.currentSession || this.currentSession.getState() !== 'active') {
       return Promise.resolve([]);
     }
@@ -113,11 +126,21 @@ export class ParticipantsTreeProvider implements vscode.TreeDataProvider<Partici
     const states = this.presenceManager?.getStates();
     const followingId = this.followController?.getFollowingUserId();
 
-    const items = participants.map((p) => {
+    const items: vscode.TreeItem[] = participants.map((p) => {
       const presence = states?.get(p.id);
       const isFollowing = followingId === p.id;
       return new ParticipantTreeItem(p, presence, isFollowing);
     });
+
+    const isGuest = this.currentSession instanceof GuestSession;
+    items.push(
+      new ActionTreeItem(
+        isGuest ? 'Disconnect Session' : 'End Session',
+        isGuest ? 'debug-disconnect' : 'circle-slash',
+        'colive.endSession',
+        isGuest ? 'Leave workspace' : 'Stop hosting',
+      ),
+    );
 
     return Promise.resolve(items);
   }
