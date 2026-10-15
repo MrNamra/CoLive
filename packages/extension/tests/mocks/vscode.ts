@@ -412,7 +412,10 @@ export const workspace = {
     get: <T>(key: string, defaultVal: T): T => defaultVal,
   }),
   registerFileSystemProvider: () => new Disposable(),
-  updateWorkspaceFolders: () => true,
+  updateWorkspaceFolders: (start: number, deleteCount: number, ...workspaceFoldersToAdd: Array<{ uri: Uri; name?: string }>): boolean => {
+    workspace.workspaceFolders.splice(start, deleteCount, ...workspaceFoldersToAdd.map((f) => ({ uri: f.uri, name: f.name || '' })));
+    return true;
+  },
   createFileSystemWatcher: () => ({
     onDidCreate: () => new Disposable(),
     onDidChange: () => new Disposable(),

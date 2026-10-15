@@ -70,6 +70,20 @@ export const ServerSessionCreatedSchema = BaseMessageSchema.extend({
 });
 export type ServerSessionCreated = z.infer<typeof ServerSessionCreatedSchema>;
 
+export const HostReconnectSchema = BaseMessageSchema.extend({
+  type: z.literal('host.reconnect'),
+  sessionId: z.string(),
+  hostToken: z.string(),
+});
+export type HostReconnect = z.infer<typeof HostReconnectSchema>;
+
+export const ServerHostReconnectedSchema = BaseMessageSchema.extend({
+  type: z.literal('server.hostReconnected'),
+  sessionId: z.string(),
+  success: z.boolean(),
+});
+export type ServerHostReconnected = z.infer<typeof ServerHostReconnectedSchema>;
+
 export const GuestJoinSchema = BaseMessageSchema.extend({
   type: z.literal('guest.join'),
   sessionId: z.string(),
@@ -411,6 +425,8 @@ export const ColiveMessageSchema = z.discriminatedUnion('type', [
   PongMessageSchema,
   HostCreateSessionSchema,
   ServerSessionCreatedSchema,
+  HostReconnectSchema,
+  ServerHostReconnectedSchema,
   GuestJoinSchema,
   ServerJoinRequestSchema,
   HostJoinDecisionSchema,

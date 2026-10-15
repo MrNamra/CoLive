@@ -1,6 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
+import * as vscode from 'vscode';
 import { buildDeepLink, buildPasteCode, parseInviteInput } from '../src/invite.js';
 import { SessionLifecycleState, SessionStateChangeEvent } from '../src/session/sessionState.js';
+import { cleanupColiveWorkspaceFolders } from '../src/extension.js';
 
 describe('Invite Link & Paste Code Utilities', () => {
   const sessionId = 'abc123xyz0';
@@ -152,5 +154,28 @@ describe('RPC Timeout Behavior', () => {
     await expect(promise).rejects.toThrowError("RPC request 'req_test_timeout' timed out after 1000ms");
 
     vi.useRealTimers();
+  });
+});
+
+describe('Workspace Folder Cleanup on Reload & Deactivate', () => {
+  it('removes all virtual colive:/ folders from participant workspace', () => {
+    // Populate mock workspace folders with local and colive folders
+    vscode.workspace.updateWorkspaceFolders(
+      0,
+      vscode.workspace.workspaceFolders.length,
+      { uri: vscode.Uri.file('/home/user/project'), name: 'project' },
+      { uri: vscode.Uri.parse('colive:/MyWorkspace'), name: 'CoLive: MyWorkspace' },
+      { uri: vscode.Uri.file('/home/user/other'), name: 'other' },
+      { uri: vscode.Uri.parse('colive:/SecondShare'), name: 'CoLive: SecondShare' },
+    );
+
+    expect(vscode.workspace.workspaceFolders).toHaveLength(4);
+
+    // Call cleanup (runs on extension activate, deactivate, or endSession)
+    cleanupColiveWorkspaceFolders();
+
+    expect(vscode.workspace.workspaceFolders).toHaveLength(2);
+    expect(vscode.workspace.workspaceFolders.map((f) => f.uri.scheme)).toEqual(['file', 'file']);
+    expect(vscode.workspace.workspaceFolders.map((f) => f.name)).toEqual(['project', 'other']);
   });
 });

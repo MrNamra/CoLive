@@ -18,6 +18,7 @@ export interface SessionData {
   hostParticipantId: string;
   hostClientId: string | null;
   hostGraceTimer?: NodeJS.Timeout;
+  guestGraceTimers?: Map<string, NodeJS.Timeout>;
   participants: Map<string, ParticipantInfo>; // participantId -> ParticipantInfo
   clientToParticipant: Map<string, string>; // clientId -> participantId
   participantToClient: Map<string, string>; // participantId -> clientId
@@ -41,6 +42,7 @@ export class InMemorySessionStore implements SessionStore {
   ): Promise<SessionData> {
     const session: SessionData = {
       ...data,
+      guestGraceTimers: new Map(),
       participants: new Map(),
       clientToParticipant: new Map(),
       participantToClient: new Map(),
@@ -61,6 +63,12 @@ export class InMemorySessionStore implements SessionStore {
     if (session) {
       if (session.hostGraceTimer) {
         clearTimeout(session.hostGraceTimer);
+      }
+      if (session.guestGraceTimers) {
+        for (const timer of session.guestGraceTimers.values()) {
+          clearTimeout(timer);
+        }
+        session.guestGraceTimers.clear();
       }
       for (const pj of session.pendingJoins.values()) {
         if (pj.timeoutId) clearTimeout(pj.timeoutId);

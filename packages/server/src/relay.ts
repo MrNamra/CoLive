@@ -314,6 +314,57 @@ export class RelayServer {
       return;
     }
 
+    // 3b. Host Reconnect Request
+    if (msg.type === 'host.reconnect') {
+      const session = await this.store.getSession(msg.sessionId);
+      if (!session || Date.now() > session.expiresAt || session.hostToken !== msg.hostToken) {
+        this.sendJson(client, {
+          v: PROTOCOL_VERSION,
+          type: 'error',
+          id: msg.id,
+          code: 'FORBIDDEN',
+          message: 'Invalid session or host token',
+        });
+        return;
+      }
+
+      if (session.hostGraceTimer) {
+        clearTimeout(session.hostGraceTimer);
+        session.hostGraceTimer = undefined;
+      }
+
+      if (session.hostClientId && session.hostClientId !== client.id) {
+        session.clientToParticipant.delete(session.hostClientId);
+      }
+
+      session.hostClientId = client.id;
+      session.clientToParticipant.set(client.id, session.hostParticipantId);
+      session.participantToClient.set(session.hostParticipantId, client.id);
+      client.sessionId = session.sessionId;
+      client.participantId = session.hostParticipantId;
+      client.role = 'host';
+
+      const hostParticipant = session.participants.get(session.hostParticipantId);
+      if (hostParticipant) {
+        hostParticipant.status = 'active';
+        this.broadcastToSession(session, {
+          v: PROTOCOL_VERSION,
+          type: 'server.participantUpdated',
+          participant: hostParticipant,
+        });
+      }
+
+      this.sendJson(client, {
+        v: PROTOCOL_VERSION,
+        type: 'server.hostReconnected',
+        id: msg.id,
+        sessionId: session.sessionId,
+        success: true,
+      });
+      logger.info({ sessionId: session.sessionId }, 'Host reconnected and reclaimed session');
+      return;
+    }
+
     // 4. Guest Join Request
     if (msg.type === 'guest.join') {
       const session = await this.store.getSession(msg.sessionId);
@@ -330,6 +381,18 @@ export class RelayServer {
       if (msg.guestToken && session.participants.has(msg.guestToken)) {
         const participant = session.participants.get(msg.guestToken)!;
         participant.status = 'active';
+
+        // Clear guest grace timer if pending
+        if (session.guestGraceTimers?.has(participant.id)) {
+          clearTimeout(session.guestGraceTimers.get(participant.id)!);
+          session.guestGraceTimers.delete(participant.id);
+        }
+
+        // Clean up old socket mapping if any
+        const oldClientId = session.participantToClient.get(participant.id);
+        if (oldClientId && oldClientId !== client.id) {
+          session.clientToParticipant.delete(oldClientId);
+        }
 
         // Reassign client mapping
         session.clientToParticipant.set(client.id, participant.id);
@@ -875,18 +938,46 @@ export class RelayServer {
     if (client.participantId) {
       const p = session.participants.get(client.participantId);
       if (p) {
-        session.participants.delete(client.participantId);
-        session.participantToClient.delete(client.participantId);
-        session.clientToParticipant.delete(client.id);
-        if (p.color) {
-          session.assignedColors.delete(p.color);
+        if (session.participantToClient.get(client.participantId) === client.id) {
+          session.participantToClient.delete(client.participantId);
         }
+        session.clientToParticipant.delete(client.id);
+
+        p.status = 'reconnecting';
+        logger.info({ sessionId: session.sessionId, participantId: p.id }, 'Guest disconnected. Starting 60s grace period.');
+
         this.broadcastToSession(session, {
           v: PROTOCOL_VERSION,
-          type: 'server.participantLeft',
-          participantId: p.id,
-          reason: 'Disconnected',
+          type: 'server.participantUpdated',
+          participant: p,
         });
+
+        if (!session.guestGraceTimers) {
+          session.guestGraceTimers = new Map();
+        }
+        if (session.guestGraceTimers.has(p.id)) {
+          clearTimeout(session.guestGraceTimers.get(p.id)!);
+        }
+
+        const timer = setTimeout(async () => {
+          session.guestGraceTimers?.delete(p.id);
+          const currentSession = await this.store.getSession(session.sessionId);
+          if (currentSession && !currentSession.participantToClient.has(p.id)) {
+            logger.info({ sessionId: session.sessionId, participantId: p.id }, 'Guest grace period expired.');
+            currentSession.participants.delete(p.id);
+            if (p.color) {
+              currentSession.assignedColors.delete(p.color);
+            }
+            this.broadcastToSession(currentSession, {
+              v: PROTOCOL_VERSION,
+              type: 'server.participantLeft',
+              participantId: p.id,
+              reason: 'Disconnected',
+            });
+          }
+        }, 60_000);
+
+        session.guestGraceTimers.set(p.id, timer);
       }
     }
 

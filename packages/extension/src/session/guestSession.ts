@@ -66,6 +66,10 @@ export class GuestSession extends SessionController {
       }
     });
 
+    this.connection.on('reconnected', () => {
+      this.rejoinWithToken();
+    });
+
     await this.connection.connect();
 
     // Show progress while waiting for host approval
@@ -200,18 +204,49 @@ export class GuestSession extends SessionController {
     );
   }
 
-  private rejoinWithToken(): void {
+  private async rejoinWithToken(): Promise<void> {
     if (!this.connection || !this.guestToken) return;
     Logger.info('Rejoining session automatically with existing guestToken');
     const joinReq: GuestJoin = {
       v: PROTOCOL_VERSION,
       type: 'guest.join',
       sessionId: this.sessionId,
+      inviteSecret: this.inviteSecret,
       guestToken: this.guestToken,
       displayName: this.displayName,
     };
-    this.connection.send(joinReq);
-    this.setState('active');
+    try {
+      const res = await this.connection.request<ServerJoinAccepted | ServerJoinRejected>(joinReq, 15000);
+      if (res.type === 'server.joinAccepted') {
+        this.guestId = res.guestId;
+        this.guestToken = res.guestToken;
+        this.permission = res.permission;
+        this.hostInfo = res.hostInfo;
+
+        this.participantsMap.set(res.hostInfo.id, res.hostInfo);
+        for (const p of res.participants) {
+          this.participantsMap.set(p.id, p);
+        }
+        this.participantsMap.set(this.guestId, {
+          id: this.guestId,
+          role: 'guest',
+          displayName: this.displayName,
+          color: '#3CB44B',
+          permission: this.permission,
+          status: 'active',
+        });
+
+        this.setState('active');
+        this._onDidChangeParticipants.fire(this.getParticipants());
+        vscode.window.setStatusBarMessage('CoLive: Reconnected to host', 4000);
+      } else if (res.type === 'server.joinRejected') {
+        Logger.warn('Rejoin was rejected by server', res.reason);
+        this.setState('ended', res.reason);
+        this.dispose();
+      }
+    } catch (err) {
+      Logger.warn('Failed to rejoin session with token', { err });
+    }
   }
 
   private handleMessage(msg: ColiveMessage): void {
@@ -299,12 +334,12 @@ export class GuestSession extends SessionController {
       this.syncManager = null;
     }
 
-    if (this.mountedFolderUri && vscode.workspace.workspaceFolders) {
-      const idx = vscode.workspace.workspaceFolders.findIndex(
-        (f) => f.uri.toString() === this.mountedFolderUri!.toString(),
-      );
-      if (idx >= 0) {
-        vscode.workspace.updateWorkspaceFolders(idx, 1);
+    if (vscode.workspace.workspaceFolders) {
+      for (let i = vscode.workspace.workspaceFolders.length - 1; i >= 0; i--) {
+        const folder = vscode.workspace.workspaceFolders[i];
+        if (folder.uri.scheme === 'colive' || (this.mountedFolderUri && folder.uri.toString() === this.mountedFolderUri.toString())) {
+          vscode.workspace.updateWorkspaceFolders(i, 1);
+        }
       }
       this.mountedFolderUri = null;
     }

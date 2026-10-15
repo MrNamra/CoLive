@@ -1,9 +1,11 @@
 import * as vscode from 'vscode';
 import {
   ColiveMessage,
+  HostReconnect,
   ParticipantInfo,
   Permission,
   PROTOCOL_VERSION,
+  ServerHostReconnected,
   ServerJoinRequest,
   ServerSessionCreated,
 } from '@colive/protocol';
@@ -74,7 +76,12 @@ export class HostSession extends SessionController {
         this.setState('reconnecting');
       } else if (connState === 'connected' && this.state === 'reconnecting') {
         this.setState('active');
+        this.reclaimHostSession();
       }
+    });
+
+    this.connection.on('reconnected', () => {
+      this.reclaimHostSession();
     });
 
     await this.connection.connect();
@@ -318,6 +325,26 @@ export class HostSession extends SessionController {
     });
     this.participantsMap.delete(guestId);
     this._onDidChangeParticipants.fire(this.getParticipants());
+  }
+
+  private async reclaimHostSession(): Promise<void> {
+    if (!this.connection || !this.sessionId || !this.hostToken) return;
+    Logger.info('Host reclaiming session from relay after connection recovery');
+    try {
+      const reconnectMsg: HostReconnect = {
+        v: PROTOCOL_VERSION,
+        type: 'host.reconnect',
+        sessionId: this.sessionId,
+        hostToken: this.hostToken,
+      };
+      const res = await this.connection.request<ServerHostReconnected>(reconnectMsg, 15000);
+      if (res.type === 'server.hostReconnected' && res.success) {
+        Logger.info('Host session successfully reclaimed on relay');
+        vscode.window.setStatusBarMessage('CoLive: Host connection restored', 4000);
+      }
+    } catch (err) {
+      Logger.warn('Failed to reclaim host session on reconnect', { err });
+    }
   }
 
   public async copyInvite(): Promise<void> {

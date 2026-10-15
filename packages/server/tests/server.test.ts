@@ -338,4 +338,107 @@ describe('Relay Server Integration Test Suite', () => {
     const closeEvent = await closePromise;
     expect(closeEvent.code).toBe(1009);
   });
+
+  it('Guest auto-reconnects with guestToken during connection fluctuation without re-approval', async () => {
+    const hostWs = await connectClient('host');
+    let guestWs = await connectClient('guest');
+
+    // 1. Host creates session
+    hostWs.send(
+      JSON.stringify({
+        v: PROTOCOL_VERSION,
+        type: 'host.createSession',
+        displayName: 'Alice Host',
+      }),
+    );
+    const created = await waitForJson(hostWs, 'server.sessionCreated');
+
+    // 2. Guest joins
+    guestWs.send(
+      JSON.stringify({
+        v: PROTOCOL_VERSION,
+        type: 'guest.join',
+        sessionId: created.sessionId,
+        inviteSecret: created.inviteSecret,
+        displayName: 'Bob Guest',
+      }),
+    );
+    const joinReq = await waitForJson(hostWs, 'server.joinRequest');
+
+    // 3. Host accepts
+    hostWs.send(
+      JSON.stringify({
+        v: PROTOCOL_VERSION,
+        type: 'host.joinDecision',
+        requestId: joinReq.requestId,
+        accept: true,
+        permission: 'readWrite',
+      }),
+    );
+    const joinAccepted = await waitForJson(guestWs, 'server.joinAccepted');
+    expect(joinAccepted.guestToken).toBeDefined();
+
+    // 4. Simulate connection fluctuation: guest socket closes abruptly
+    const reconnectingPromise = waitForJson(hostWs, 'server.participantUpdated');
+    guestWs.close();
+    const reconnectingMsg = await reconnectingPromise;
+    expect(reconnectingMsg.participant.status).toBe('reconnecting');
+
+    // 5. Guest auto-reconnects with new socket using guestToken
+    guestWs = await connectClient('guest');
+    const hostActivePromise = waitForJson(hostWs, 'server.participantUpdated');
+    guestWs.send(
+      JSON.stringify({
+        v: PROTOCOL_VERSION,
+        type: 'guest.join',
+        sessionId: created.sessionId,
+        guestToken: joinAccepted.guestToken,
+        displayName: 'Bob Guest',
+      }),
+    );
+
+    const reconnected = await waitForJson(guestWs, 'server.joinAccepted');
+    expect(reconnected.guestId).toBe(joinAccepted.guestId);
+    expect(reconnected.permission).toBe('readWrite');
+
+    const activeMsg = await hostActivePromise;
+    expect(activeMsg.participant.status).toBe('active');
+
+    hostWs.close();
+    guestWs.close();
+  });
+
+  it('Host auto-reconnects with hostToken after network fluctuation and reclaims session', async () => {
+    let hostWs = await connectClient('host');
+
+    // 1. Host creates session
+    hostWs.send(
+      JSON.stringify({
+        v: PROTOCOL_VERSION,
+        type: 'host.createSession',
+        displayName: 'Alice Host',
+      }),
+    );
+    const created = await waitForJson(hostWs, 'server.sessionCreated');
+
+    // 2. Simulate connection fluctuation: host socket drops
+    hostWs.close();
+
+    // 3. Host auto-reconnects with new socket and reclaims session
+    hostWs = await connectClient('host');
+    hostWs.send(
+      JSON.stringify({
+        v: PROTOCOL_VERSION,
+        type: 'host.reconnect',
+        sessionId: created.sessionId,
+        hostToken: created.hostToken,
+      }),
+    );
+
+    const reconnected = await waitForJson(hostWs, 'server.hostReconnected');
+    expect(reconnected.sessionId).toBe(created.sessionId);
+    expect(reconnected.success).toBe(true);
+
+    hostWs.close();
+  });
 });

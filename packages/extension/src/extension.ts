@@ -24,9 +24,22 @@ let commentsTree: CommentsTreeProvider | null = null;
 let chatProvider: ChatViewProvider | null = null;
 let tunnelManager: TunnelManager | null = null;
 
+export function cleanupColiveWorkspaceFolders(): void {
+  const folders = vscode.workspace.workspaceFolders;
+  if (!folders || folders.length === 0) return;
+  for (let i = folders.length - 1; i >= 0; i--) {
+    if (folders[i].uri.scheme === 'colive') {
+      vscode.workspace.updateWorkspaceFolders(i, 1);
+    }
+  }
+}
+
 export function activate(context: vscode.ExtensionContext): void {
   Logger.initialize();
   Logger.info('CoLive extension activating...');
+
+  // Prune any lingering virtual workspace folders from previous sessions or window reload
+  cleanupColiveWorkspaceFolders();
 
   tunnelManager = new TunnelManager(context.globalStorageUri.fsPath);
   statusBar = new StatusBarManager();
@@ -630,6 +643,7 @@ async function endCurrentSession(): Promise<void> {
   if (choice === button) {
     await activeSession.endSession();
     activeSession = null;
+    cleanupColiveWorkspaceFolders();
     tunnelManager?.stopTunnel();
     statusBar?.setSession(null);
     participantsTree?.setSession(null);
@@ -645,6 +659,7 @@ export function deactivate(): void {
     activeSession.endSession();
     activeSession = null;
   }
+  cleanupColiveWorkspaceFolders();
   tunnelManager?.stopTunnel();
   statusBar?.dispose();
   participantsTree?.dispose();
