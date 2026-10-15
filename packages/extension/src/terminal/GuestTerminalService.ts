@@ -92,7 +92,7 @@ export class GuestTerminalService implements vscode.Disposable {
       },
       handleInput: (data: string) => {
         if (this.isReadOnly) {
-          vscode.window.showInformationMessage('CoLive Terminal is in read-only mode.');
+          vscode.window.showInformationMessage('CoLive Terminal is in read-only mode (requires "Terminal Access" permission from host).');
           return;
         }
         const inputMsg: TerminalInput = {

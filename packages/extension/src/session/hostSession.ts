@@ -245,6 +245,7 @@ export class HostSession extends SessionController {
       .showInformationMessage(
         `CoLive: "${req.displayName}" wants to join your session.`,
         Strings.acceptReadWrite,
+        Strings.acceptTerminalAccess,
         Strings.acceptReadOnly,
         Strings.decline,
       )
@@ -257,6 +258,20 @@ export class HostSession extends SessionController {
             accept: true,
             permission: 'readWrite',
           });
+        } else if (decision === Strings.acceptTerminalAccess) {
+          this.connection?.send({
+            v: PROTOCOL_VERSION,
+            type: 'host.joinDecision',
+            requestId: req.requestId,
+            accept: true,
+            permission: 'terminalAccess',
+          });
+          // Ensure shared terminals allow typing when terminal access is granted
+          if (this.terminalService) {
+            for (const t of this.terminalService.getActiveTerminals()) {
+              t.guestWriteAllowed = true;
+            }
+          }
         } else if (decision === Strings.acceptReadOnly) {
           this.connection?.send({
             v: PROTOCOL_VERSION,
@@ -286,6 +301,11 @@ export class HostSession extends SessionController {
       guestId,
       permission,
     });
+    if (permission === 'terminalAccess' && this.terminalService) {
+      for (const t of this.terminalService.getActiveTerminals()) {
+        t.guestWriteAllowed = true;
+      }
+    }
   }
 
   public async kickParticipant(guestId: string, reason?: string): Promise<void> {

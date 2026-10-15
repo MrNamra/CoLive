@@ -191,7 +191,7 @@ export class GuestSession extends SessionController {
 
           // Initialize guest terminal service
           this.terminalService = new GuestTerminalService(this.connection!);
-          this.terminalService.setReadOnly(this.permission === 'readOnly');
+          this.terminalService.setReadOnly(this.permission !== 'terminalAccess');
 
           this.setState('active');
           this._onDidChangeParticipants.fire(this.getParticipants());
@@ -243,6 +243,8 @@ export class GuestSession extends SessionController {
         const isReadOnly = this.permission === 'readOnly';
         this.fsProvider?.setReadOnly(isReadOnly);
         this.syncManager?.setReadOnly(isReadOnly);
+        const hasTerminalAccess = this.permission === 'terminalAccess';
+        this.terminalService?.setReadOnly(!hasTerminalAccess);
       }
       this._onDidChangeParticipants.fire(this.getParticipants());
       return;

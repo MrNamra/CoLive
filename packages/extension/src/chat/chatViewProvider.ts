@@ -267,6 +267,16 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
       this.unreadCount++;
       this.updateBadge();
     }
+
+    // Show notification for incoming chat messages
+    const preview = msg.text.length > 60 ? `${msg.text.slice(0, 57)}...` : msg.text;
+    vscode.window
+      .showInformationMessage(`CoLive [${msg.fromName}]: ${preview}`, 'Open Chat')
+      .then((action) => {
+        if (action === 'Open Chat') {
+          vscode.commands.executeCommand('colive.chatView.focus');
+        }
+      });
   }
 
   private updateBadge(): void {

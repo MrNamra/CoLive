@@ -153,8 +153,9 @@ export function activate(context: vscode.ExtensionContext): void {
 
       const choice = await vscode.window.showQuickPick(
         [
-          { label: 'Read & write', value: 'readWrite' as const },
-          { label: 'Read-only', value: 'readOnly' as const },
+          { label: 'Read & write', description: 'Can view and edit workspace files', value: 'readWrite' as const },
+          { label: 'Terminal access', description: 'Can edit files and execute in shared terminal', value: 'terminalAccess' as const },
+          { label: 'Read-only', description: 'Can only view files and follow host', value: 'readOnly' as const },
         ],
         { placeHolder: `Set permission for ${item.participant.displayName}` },
       );

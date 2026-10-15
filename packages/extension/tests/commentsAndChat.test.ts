@@ -19,6 +19,7 @@ import {
   safeLinkify,
   ChatRateLimiter,
   ALLOWED_SLASH_COMMANDS,
+  ChatViewProvider,
 } from '../src/chat/chatViewProvider.js';
 import {
   convertVsCodeDiagnosticsToItems,
@@ -248,6 +249,31 @@ describe('Milestone 8: Comments, Chat, Diagnostics', () => {
       expect(ALLOWED_SLASH_COMMANDS.has('colive.stopFollowing')).toBe(true);
       expect(ALLOWED_SLASH_COMMANDS.has('workbench.action.terminal.sendSequence')).toBe(false);
       expect(ALLOWED_SLASH_COMMANDS.has('vscode.openFolder')).toBe(false);
+    });
+
+    it('shows notification on incoming chat message from other users', async () => {
+      const showInfoSpy = vi.spyOn(vscode.window, 'showInformationMessage');
+      const provider = new ChatViewProvider(vscode.Uri.file('/extension'));
+      const mockConn = {
+        on: vi.fn(),
+        send: vi.fn(),
+      } as any;
+      provider.setSession(mockConn, 'user_self', 'Self');
+
+      // @ts-expect-error accessing private method for test
+      provider.handleIncomingChatMessage({
+        v: 1,
+        type: 'chat.message',
+        fromId: 'user_other',
+        fromName: 'Alice',
+        text: 'Hello from Alice!',
+        ts: Date.now(),
+      });
+
+      expect(showInfoSpy).toHaveBeenCalledWith(
+        expect.stringContaining('CoLive [Alice]: Hello from Alice!'),
+        'Open Chat',
+      );
     });
   });
 

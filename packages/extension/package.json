@@ -315,9 +315,9 @@
         },
         "colive.defaultGuestPermission": {
           "type": "string",
-          "enum": ["readWrite", "readOnly"],
+          "enum": ["readWrite", "terminalAccess", "readOnly"],
           "default": "readWrite",
-          "description": "Default permission granted to new guests."
+          "description": "Default permission granted to new guests (readWrite, terminalAccess, readOnly)."
         },
         "colive.requireJoinApproval": {
           "type": "boolean",

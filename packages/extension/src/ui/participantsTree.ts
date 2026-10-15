@@ -20,7 +20,12 @@ export class ParticipantTreeItem extends vscode.TreeItem {
       ? new vscode.ThemeIcon('crown')
       : new vscode.ThemeIcon('circle-filled');
 
-    const permLabel = participant.permission === 'readOnly' ? ' [Read-only]' : '';
+    const permLabel =
+      participant.permission === 'readOnly'
+        ? ' [Read-only]'
+        : participant.permission === 'terminalAccess'
+          ? ' [Terminal]'
+          : '';
     const isTyping = presence && presence.typingUntil > Date.now();
     const typingLabel = isTyping ? ' $(pencil) typing...' : '';
 

@@ -4,7 +4,7 @@ import { MAX_COMMENT_BODY_LENGTH } from './constants.js';
 export const RoleSchema = z.enum(['host', 'guest']);
 export type Role = z.infer<typeof RoleSchema>;
 
-export const PermissionSchema = z.enum(['readOnly', 'readWrite']);
+export const PermissionSchema = z.enum(['readOnly', 'readWrite', 'terminalAccess']);
 export type Permission = z.infer<typeof PermissionSchema>;
 
 export const PositionSchema = z.object({

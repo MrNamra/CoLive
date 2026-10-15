@@ -27,6 +27,7 @@ export const Strings = {
   leaveSessionButton: 'Leave Session',
   cancel: 'Cancel',
   acceptReadWrite: 'Accept (Read & Write)',
+  acceptTerminalAccess: 'Accept (Terminal Access)',
   acceptReadOnly: 'Accept (Read-only)',
   decline: 'Decline',
   untrustedHostWarning: 'You are opening a remote workspace from an untrusted host. Code execution tasks are disabled.',
