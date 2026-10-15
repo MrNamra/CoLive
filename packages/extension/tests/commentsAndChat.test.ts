@@ -274,6 +274,88 @@ describe('Milestone 8: Comments, Chat, Diagnostics', () => {
         'Open Chat',
       );
     });
+
+    it('buffers messages until webview signals ready, then flushes history', async () => {
+      const provider = new ChatViewProvider(vscode.Uri.file('/extension'));
+      const mockConn = {
+        onMessage: vi.fn().mockReturnValue({ dispose: vi.fn() }),
+        send: vi.fn(),
+      } as any;
+      provider.setSession(mockConn, 'user_self', 'Self');
+
+      // Incoming message before webview is resolved
+      provider.handleIncomingChatMessage({
+        v: 1,
+        type: 'chat.message',
+        fromId: 'user_bob',
+        fromName: 'Bob',
+        text: 'Pre-load message',
+        ts: Date.now(),
+      });
+
+      const postedMessages: any[] = [];
+      let messageHandler: ((data: any) => Promise<void>) | undefined;
+
+      const mockWebviewView: any = {
+        webview: {
+          options: {},
+          html: '',
+          onDidReceiveMessage: vi.fn((fn) => {
+            messageHandler = fn;
+            return { dispose: vi.fn() };
+          }),
+          postMessage: vi.fn((msg) => {
+            postedMessages.push(msg);
+            return Promise.resolve(true);
+          }),
+        },
+        onDidChangeVisibility: vi.fn(() => ({ dispose: vi.fn() })),
+        visible: true,
+      };
+
+      provider.resolveWebviewView(mockWebviewView, {} as any, {} as any);
+
+      // Webview sends 'ready' handshake
+      expect(messageHandler).toBeDefined();
+      await messageHandler!({ type: 'ready' });
+
+      // Check that history was delivered
+      const historyMsg = postedMessages.find((m) => m.type === 'setHistory');
+      expect(historyMsg).toBeDefined();
+      expect(historyMsg.messages.length).toBe(1);
+      expect(historyMsg.messages[0].text).toBe('Pre-load message');
+
+      provider.dispose();
+    });
+
+    it('handles /help and /clear slash commands', async () => {
+      const provider = new ChatViewProvider(vscode.Uri.file('/extension'));
+      const handledHelp = await provider.handleSlashCommand('/help');
+      expect(handledHelp).toBe(true);
+
+      const handledClear = await provider.handleSlashCommand('/clear');
+      expect(handledClear).toBe(true);
+    });
+
+    it('skips echoed messages from self', () => {
+      const showInfoSpy = vi.spyOn(vscode.window, 'showInformationMessage');
+      showInfoSpy.mockClear();
+
+      const provider = new ChatViewProvider(vscode.Uri.file('/extension'));
+      provider.setSession({ onMessage: vi.fn().mockReturnValue({ dispose: vi.fn() }) } as any, 'user_me', 'Me');
+
+      provider.handleIncomingChatMessage({
+        v: 1,
+        type: 'chat.message',
+        fromId: 'user_me',
+        fromName: 'Me',
+        text: 'Echo message',
+        ts: Date.now(),
+      });
+
+      expect(showInfoSpy).not.toHaveBeenCalled();
+      provider.dispose();
+    });
   });
 
   describe('Diagnostics Conversion and Mapping', () => {

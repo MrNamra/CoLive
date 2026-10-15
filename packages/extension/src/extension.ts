@@ -91,7 +91,11 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // Register Chat Webview View Provider
   context.subscriptions.push(
-    vscode.window.registerWebviewViewProvider(ChatViewProvider.viewType, chatProvider),
+    vscode.window.registerWebviewViewProvider(ChatViewProvider.viewType, chatProvider, {
+      webviewOptions: {
+        retainContextWhenHidden: true,
+      },
+    }),
   );
 
   // Register URI handler for deep links: vscode://colive-team.colive/join?...
