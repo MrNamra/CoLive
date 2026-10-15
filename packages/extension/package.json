@@ -141,6 +141,42 @@
         "category": "CoLive"
       },
       {
+        "command": "colive.createComment",
+        "title": "Add Comment",
+        "category": "CoLive",
+        "icon": "$(comment-add)"
+      },
+      {
+        "command": "colive.replyComment",
+        "title": "Reply",
+        "category": "CoLive",
+        "icon": "$(reply)"
+      },
+      {
+        "command": "colive.deleteComment",
+        "title": "Delete Comment",
+        "category": "CoLive",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "colive.resolveCommentThread",
+        "title": "Resolve Thread",
+        "category": "CoLive",
+        "icon": "$(check)"
+      },
+      {
+        "command": "colive.unresolveCommentThread",
+        "title": "Reopen Thread",
+        "category": "CoLive",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "colive.clearChat",
+        "title": "CoLive: Clear Chat History",
+        "category": "CoLive",
+        "icon": "$(clear-all)"
+      },
+      {
         "command": "colive.showWalkthrough",
         "title": "CoLive: Show Walkthrough",
         "category": "CoLive"
@@ -193,6 +229,18 @@
         "command": "colive.shareTerminal",
         "key": "ctrl+alt+l t",
         "mac": "cmd+alt+l t"
+      },
+      {
+        "command": "colive.createComment",
+        "key": "ctrl+enter",
+        "mac": "cmd+enter",
+        "when": "commentEditorFocused"
+      },
+      {
+        "command": "colive.replyComment",
+        "key": "ctrl+enter",
+        "mac": "cmd+enter",
+        "when": "commentEditorFocused"
       }
     ],
     "menus": {
@@ -216,6 +264,11 @@
           "command": "colive.toggleTerminalWrite",
           "when": "view == colive.participants && colive.inSession && colive.isHost",
           "group": "navigation@3"
+        },
+        {
+          "command": "colive.clearChat",
+          "when": "view == colive.chatView",
+          "group": "navigation@0"
         }
       ],
       "editor/context": [
@@ -239,6 +292,54 @@
           "command": "colive.kickParticipant",
           "when": "view == colive.participants && viewItem == participant",
           "group": "inline@2"
+        }
+      ],
+      "comments/commentThread/title": [
+        {
+          "command": "colive.createComment",
+          "group": "navigation@1",
+          "when": "commentController == colive"
+        },
+        {
+          "command": "colive.replyComment",
+          "group": "navigation@2",
+          "when": "commentController == colive && commentThread.contextValue == unresolved"
+        },
+        {
+          "command": "colive.resolveCommentThread",
+          "group": "navigation@3",
+          "when": "commentController == colive && commentThread.contextValue == unresolved"
+        },
+        {
+          "command": "colive.unresolveCommentThread",
+          "group": "navigation@3",
+          "when": "commentController == colive && commentThread.contextValue == resolved"
+        }
+      ],
+      "comments/commentThread/context": [
+        {
+          "command": "colive.createComment",
+          "group": "inline@1",
+          "when": "commentController == colive"
+        },
+        {
+          "command": "colive.replyComment",
+          "group": "inline@2",
+          "when": "commentController == colive"
+        }
+      ],
+      "comments/comment/title": [
+        {
+          "command": "colive.deleteComment",
+          "group": "navigation",
+          "when": "commentController == colive && comment.contextValue == canDelete"
+        }
+      ],
+      "comments/comment/context": [
+        {
+          "command": "colive.deleteComment",
+          "group": "1_modification",
+          "when": "commentController == colive && comment.contextValue == canDelete"
         }
       ]
     },

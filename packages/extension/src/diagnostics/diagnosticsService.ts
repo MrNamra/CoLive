@@ -124,7 +124,7 @@ export class HostDiagnosticsBroadcaster implements vscode.Disposable {
 
   public dispose(): void {
     for (const d of this.disposables) {
-      d.dispose();
+      d?.dispose();
     }
     this.disposables = [];
   }
@@ -146,11 +146,11 @@ export class GuestDiagnosticsReceiver implements vscode.Disposable {
     this.disposables.push(this.collection);
 
     this.disposables.push(
-      this.connection.on('message', (msg) => {
+      this.connection.onMessage((msg) => {
         if (msg.type === 'diagnostics.update') {
           this.handleDiagnosticsUpdate(msg);
         }
-      }) as unknown as vscode.Disposable,
+      }),
     );
   }
 
@@ -162,7 +162,7 @@ export class GuestDiagnosticsReceiver implements vscode.Disposable {
 
   public dispose(): void {
     for (const d of this.disposables) {
-      d.dispose();
+      d?.dispose();
     }
     this.disposables = [];
   }

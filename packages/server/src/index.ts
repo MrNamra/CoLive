@@ -75,11 +75,18 @@ export function createServer(
     <div id="codeBox" class="code-box">Loading...</div>
   </div>
   <script>
+    const pathParam = "${sessionId}";
     const secret = window.location.hash.replace(/^#/, '');
-    const sessionId = "${sessionId}";
-    const fullCode = secret ? sessionId + '.' + secret : sessionId;
-    document.getElementById('codeBox').textContent = fullCode;
-    const deepLink = 'vscode://colive-team.colive/join?session=' + sessionId + (secret ? '&secret=' + secret : '');
+    let deepLink = '';
+    let codeText = pathParam;
+    if (secret) {
+      const serverUrl = (window.location.protocol === 'https:' ? 'wss://' : 'ws://') + window.location.host + '/ws';
+      deepLink = 'vscode://colive-team.colive/join?session=' + encodeURIComponent(pathParam) + '&secret=' + encodeURIComponent(secret) + '&server=' + encodeURIComponent(serverUrl);
+      codeText = pathParam + '.' + secret;
+    } else {
+      deepLink = 'vscode://colive-team.colive/join?c=' + encodeURIComponent(pathParam);
+    }
+    document.getElementById('codeBox').textContent = codeText;
     document.getElementById('joinBtn').href = deepLink;
   </script>
 </body>

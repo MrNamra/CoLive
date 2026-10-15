@@ -275,6 +275,37 @@ describe('Milestone 8: Comments, Chat, Diagnostics', () => {
       );
     });
 
+    it('does not show notification when chat view is open and visible', async () => {
+      const showInfoSpy = vi.spyOn(vscode.window, 'showInformationMessage');
+      showInfoSpy.mockClear();
+
+      const provider = new ChatViewProvider(vscode.Uri.file('/extension'));
+      const mockConn = {
+        onMessage: vi.fn().mockReturnValue({ dispose: vi.fn() }),
+        send: vi.fn(),
+      } as any;
+      provider.setSession(mockConn, 'user_self', 'Self');
+
+      // Mock open chat view (visible = true)
+      (provider as any).view = {
+        visible: true,
+        webview: { postMessage: vi.fn() },
+      };
+
+      // @ts-expect-error accessing private method for test
+      provider.handleIncomingChatMessage({
+        v: 1,
+        type: 'chat.message',
+        fromId: 'user_other',
+        fromName: 'Alice',
+        text: 'Hello while chat is open!',
+        ts: Date.now(),
+      });
+
+      expect(showInfoSpy).not.toHaveBeenCalled();
+      provider.dispose();
+    });
+
     it('buffers messages until webview signals ready, then flushes history', async () => {
       const provider = new ChatViewProvider(vscode.Uri.file('/extension'));
       const mockConn = {
@@ -335,6 +366,46 @@ describe('Milestone 8: Comments, Chat, Diagnostics', () => {
 
       const handledClear = await provider.handleSlashCommand('/clear');
       expect(handledClear).toBe(true);
+    });
+
+    it('deletes message locally and clears entire chat', () => {
+      const provider = new ChatViewProvider(vscode.Uri.file('/extension'));
+      const mockConn = {
+        onMessage: vi.fn().mockReturnValue({ dispose: vi.fn() }),
+        send: vi.fn(),
+      } as any;
+      provider.setSession(mockConn, 'user_self', 'Self');
+
+      provider.handleIncomingChatMessage({
+        v: 1,
+        type: 'chat.message',
+        fromId: 'user_1',
+        fromName: 'Alice',
+        text: 'Message 1',
+        ts: Date.now(),
+      });
+      provider.handleIncomingChatMessage({
+        v: 1,
+        type: 'chat.message',
+        fromId: 'user_2',
+        fromName: 'Bob',
+        text: 'Message 2',
+        ts: Date.now(),
+      });
+
+      expect((provider as any).history.length).toBe(2);
+      const firstId = (provider as any).history[0].id;
+
+      // Delete first message
+      provider.deleteMessageLocally(firstId);
+      expect((provider as any).history.length).toBe(1);
+      expect((provider as any).history[0].text).toBe('Message 2');
+
+      // Clear all
+      provider.clearChatLocally();
+      expect((provider as any).history.length).toBe(0);
+
+      provider.dispose();
     });
 
     it('skips echoed messages from self', () => {

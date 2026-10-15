@@ -184,6 +184,16 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
           }
           break;
         }
+        case 'deleteMessage': {
+          if (data.id) {
+            this.deleteMessageLocally(data.id);
+          }
+          break;
+        }
+        case 'clearChat': {
+          this.clearChatLocally();
+          break;
+        }
         case 'sendMessage': {
           await this.processOutgoingMessage(data.text);
           break;
@@ -200,6 +210,21 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
         }
       }
     });
+  }
+
+  public clearChatLocally(): void {
+    this.history = [];
+    this.unreadCount = 0;
+    this.updateBadge();
+    this.postToWebview({ type: 'setHistory', messages: [] });
+  }
+
+  public deleteMessageLocally(id: string): void {
+    const idx = this.history.findIndex((m) => m.id === id);
+    if (idx !== -1) {
+      this.history.splice(idx, 1);
+      this.postToWebview({ type: 'deleteMessage', id });
+    }
   }
 
   private postToWebview(msg: any): void {
@@ -266,8 +291,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
     const arg = parts.slice(1).join(' ');
 
     if (cmd === '/clear') {
-      this.history = [];
-      this.postToWebview({ type: 'setHistory', messages: [] });
+      this.clearChatLocally();
       return true;
     }
 
@@ -356,17 +380,17 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
     if (!this.view?.visible) {
       this.unreadCount++;
       this.updateBadge();
-    }
 
-    // Show notification for incoming chat messages
-    const preview = msg.text.length > 60 ? `${msg.text.slice(0, 57)}...` : msg.text;
-    vscode.window
-      .showInformationMessage(`CoLive [${msg.fromName}]: ${preview}`, 'Open Chat')
-      .then((action) => {
-        if (action === 'Open Chat') {
-          vscode.commands.executeCommand('colive.chatView.focus');
-        }
-      });
+      // Show notification for incoming chat messages only when chat is not open
+      const preview = msg.text.length > 60 ? `${msg.text.slice(0, 57)}...` : msg.text;
+      vscode.window
+        .showInformationMessage(`CoLive [${msg.fromName}]: ${preview}`, 'Open Chat')
+        .then((action) => {
+          if (action === 'Open Chat') {
+            vscode.commands.executeCommand('colive.chatView.focus');
+          }
+        });
+    }
   }
 
   private updateBadge(): void {
@@ -421,12 +445,17 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
       line-height: 1.5;
     }
     .chat-msg {
+      position: relative;
       padding: 6px 10px;
       border-radius: 6px;
       max-width: 88%;
       word-break: break-word;
       font-size: 12px;
       line-height: 1.4;
+    }
+    .chat-msg:hover .msg-delete-btn {
+      opacity: 0.8;
+      visibility: visible;
     }
     .chat-msg.self {
       align-self: flex-end;
@@ -454,12 +483,38 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
       opacity: 0.85;
       display: flex;
       justify-content: space-between;
+      align-items: center;
       gap: 8px;
+    }
+    .msg-meta {
+      display: flex;
+      align-items: center;
+      gap: 6px;
     }
     .msg-time {
       font-weight: normal;
       font-size: 10px;
       opacity: 0.7;
+    }
+    .msg-delete-btn {
+      background: none;
+      border: none;
+      color: inherit;
+      cursor: pointer;
+      font-size: 11px;
+      line-height: 1;
+      padding: 1px 3px;
+      border-radius: 3px;
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.15s;
+    }
+    .msg-delete-btn:hover {
+      opacity: 1 !important;
+      background-color: rgba(255, 255, 255, 0.2);
+    }
+    .chat-msg.remote .msg-delete-btn:hover {
+      background-color: rgba(0, 0, 0, 0.15);
     }
     .msg-body {
       white-space: pre-wrap;
@@ -468,6 +523,26 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
       color: var(--vscode-textLink-foreground);
       text-decoration: underline;
       cursor: pointer;
+    }
+    #chat-toolbar {
+      display: flex;
+      justify-content: flex-end;
+      padding: 4px 8px;
+      border-bottom: 1px solid var(--vscode-sideBar-border, rgba(128, 128, 128, 0.15));
+      background-color: var(--vscode-sideBar-background);
+    }
+    .toolbar-btn {
+      background: none;
+      border: none;
+      color: var(--vscode-descriptionForeground);
+      font-size: 11px;
+      cursor: pointer;
+      padding: 2px 6px;
+      border-radius: 3px;
+    }
+    .toolbar-btn:hover {
+      color: var(--vscode-foreground);
+      background-color: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.15));
     }
     #input-container {
       display: flex;
@@ -505,6 +580,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
   </style>
 </head>
 <body>
+  <div id="chat-toolbar">
+    <button id="clear-btn" class="toolbar-btn" type="button" title="Clear chat history locally">Clear Chat</button>
+  </div>
   <div id="messages-container">
     <div id="empty-state" class="empty-state">No messages yet. Send a message to chat with your team!</div>
   </div>
@@ -519,6 +597,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
     let emptyState = document.getElementById('empty-state');
     const input = document.getElementById('chat-input');
     const btn = document.getElementById('send-btn');
+    const clearBtn = document.getElementById('clear-btn');
     let inSession = false;
 
     function escapeHtml(str) {
@@ -564,6 +643,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
     function appendMessage(item) {
       hideEmptyState();
       const el = document.createElement('div');
+      el.id = item.id;
       el.className = 'chat-msg ' + (item.isSelf ? 'self' : 'remote');
 
       const header = document.createElement('div');
@@ -573,12 +653,28 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
       nameSpan.textContent = item.fromName;
       header.appendChild(nameSpan);
 
+      const metaSpan = document.createElement('span');
+      metaSpan.className = 'msg-meta';
+
       if (item.ts) {
         const timeSpan = document.createElement('span');
         timeSpan.className = 'msg-time';
         timeSpan.textContent = formatTime(item.ts);
-        header.appendChild(timeSpan);
+        metaSpan.appendChild(timeSpan);
       }
+
+      const delBtn = document.createElement('button');
+      delBtn.className = 'msg-delete-btn';
+      delBtn.type = 'button';
+      delBtn.title = 'Delete message locally';
+      delBtn.textContent = '✕';
+      delBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        vscode.postMessage({ type: 'deleteMessage', id: item.id });
+      });
+      metaSpan.appendChild(delBtn);
+
+      header.appendChild(metaSpan);
       el.appendChild(header);
 
       const body = document.createElement('div');
@@ -608,6 +704,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
     }
 
     btn.addEventListener('click', send);
+    if (clearBtn) {
+      clearBtn.addEventListener('click', () => {
+        vscode.postMessage({ type: 'clearChat' });
+      });
+    }
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
         send();
@@ -640,6 +741,14 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
         }
       } else if (msg.type === 'addMessage') {
         appendMessage(msg.message);
+      } else if (msg.type === 'deleteMessage') {
+        const targetEl = document.getElementById(msg.id);
+        if (targetEl) {
+          targetEl.remove();
+        }
+        if (container.children.length === 0) {
+          showEmptyState();
+        }
       } else if (msg.type === 'addSystemMessage') {
         appendSystemMessage(msg.text);
       }

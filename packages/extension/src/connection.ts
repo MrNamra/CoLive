@@ -50,9 +50,14 @@ export class ConnectionManager {
     }
   }
 
-  public on<K extends keyof ConnectionEvents>(event: K, listener: ConnectionEvents[K]): void {
+  public on<K extends keyof ConnectionEvents>(event: K, listener: ConnectionEvents[K]): vscode.Disposable {
     const set = (this.listeners[event] ??= new Set() as unknown as Set<ConnectionEvents[K]>);
     set.add(listener);
+    return {
+      dispose: () => {
+        this.off(event, listener);
+      },
+    };
   }
 
   public off<K extends keyof ConnectionEvents>(event: K, listener: ConnectionEvents[K]): void {

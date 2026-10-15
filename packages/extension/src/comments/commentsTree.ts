@@ -58,7 +58,7 @@ export class CommentsTreeProvider implements vscode.TreeDataProvider<CommentTree
 
   public setCommentsManager(manager: CommentsManager | null): void {
     for (const d of this.disposables) {
-      d.dispose();
+      d?.dispose();
     }
     this.disposables = [];
 
@@ -147,7 +147,7 @@ export class CommentsTreeProvider implements vscode.TreeDataProvider<CommentTree
 
   public dispose(): void {
     for (const d of this.disposables) {
-      d.dispose();
+      d?.dispose();
     }
     this.disposables = [];
     this._onDidChangeTreeData.dispose();

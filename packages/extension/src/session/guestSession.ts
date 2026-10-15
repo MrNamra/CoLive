@@ -20,6 +20,7 @@ import { CommentsManager } from '../comments/CommentsManager.js';
 import { GuestDiagnosticsReceiver } from '../diagnostics/diagnosticsService.js';
 import { GuestTerminalService } from '../terminal/index.js';
 import { SessionController } from './sessionController.js';
+import { buildDeepLink, buildWebInviteUrl, buildPasteCode } from '../invite.js';
 
 export class GuestSession extends SessionController {
   public sessionId: string;
@@ -294,8 +295,26 @@ export class GuestSession extends SessionController {
 
   public async copyInvite(): Promise<void> {
     const deepLink = buildDeepLink(this.sessionId, this.inviteSecret, this.serverUrl);
+    const webLink = buildWebInviteUrl(this.sessionId, this.inviteSecret, this.serverUrl);
+    const code = buildPasteCode(this.sessionId, this.inviteSecret, this.serverUrl);
+
     await vscode.env.clipboard.writeText(deepLink);
-    vscode.window.showInformationMessage('CoLive: Worldwide invite link copied to clipboard.');
+
+    const buttons: string[] = [];
+    if (webLink) buttons.push('Copy Web Link');
+    buttons.push('Copy Short Code');
+
+    vscode.window
+      .showInformationMessage('CoLive: Short invite link copied to clipboard.', ...buttons)
+      .then(async (action) => {
+        if (action === 'Copy Web Link' && webLink) {
+          await vscode.env.clipboard.writeText(webLink);
+          vscode.window.showInformationMessage('CoLive: Web invite link copied to clipboard.');
+        } else if (action === 'Copy Short Code') {
+          await vscode.env.clipboard.writeText(code);
+          vscode.window.showInformationMessage('CoLive: Short invite code copied to clipboard.');
+        }
+      });
   }
 
   public async endSession(): Promise<void> {
@@ -304,33 +323,63 @@ export class GuestSession extends SessionController {
   }
 
   public override dispose(): void {
+    if (this.isDisposed) return;
+
     if (this.terminalService) {
-      this.terminalService.dispose();
+      try {
+        this.terminalService.dispose();
+      } catch (err) {
+        Logger.warn('Error disposing terminalService', { err });
+      }
       this.terminalService = null;
     }
     if (this.diagnosticsReceiver) {
-      this.diagnosticsReceiver.dispose();
+      try {
+        this.diagnosticsReceiver.dispose();
+      } catch (err) {
+        Logger.warn('Error disposing diagnosticsReceiver', { err });
+      }
       this.diagnosticsReceiver = null;
     }
     if (this.commentsManager) {
-      this.commentsManager.dispose();
+      try {
+        this.commentsManager.dispose();
+      } catch (err) {
+        Logger.warn('Error disposing commentsManager', { err });
+      }
       this.commentsManager = null;
     }
     if (this.followController) {
-      this.followController.dispose();
+      try {
+        this.followController.dispose();
+      } catch (err) {
+        Logger.warn('Error disposing followController', { err });
+      }
       this.followController = null;
     }
     if (this.cursorRenderer) {
-      this.cursorRenderer.dispose();
+      try {
+        this.cursorRenderer.dispose();
+      } catch (err) {
+        Logger.warn('Error disposing cursorRenderer', { err });
+      }
       this.cursorRenderer = null;
     }
     if (this.presenceManager) {
-      this.presenceManager.dispose();
+      try {
+        this.presenceManager.dispose();
+      } catch (err) {
+        Logger.warn('Error disposing presenceManager', { err });
+      }
       this.presenceManager = null;
     }
 
     if (this.syncManager) {
-      this.syncManager.dispose();
+      try {
+        this.syncManager.dispose();
+      } catch (err) {
+        Logger.warn('Error disposing syncManager', { err });
+      }
       this.syncManager = null;
     }
 
@@ -345,12 +394,20 @@ export class GuestSession extends SessionController {
     }
 
     if (this.fsRegistration) {
-      this.fsRegistration.dispose();
+      try {
+        this.fsRegistration.dispose();
+      } catch (err) {
+        Logger.warn('Error disposing fsRegistration', { err });
+      }
       this.fsRegistration = null;
     }
 
     if (this.fsProvider) {
-      this.fsProvider.dispose();
+      try {
+        this.fsProvider.dispose();
+      } catch (err) {
+        Logger.warn('Error disposing fsProvider', { err });
+      }
       this.fsProvider = null;
     }
 

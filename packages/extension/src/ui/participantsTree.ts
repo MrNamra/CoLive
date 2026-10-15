@@ -79,7 +79,7 @@ export class ParticipantsTreeProvider implements vscode.TreeDataProvider<vscode.
     followController: FollowController | null = null,
   ): void {
     for (const d of this.disposables) {
-      d.dispose();
+      d?.dispose();
     }
     this.disposables = [];
 
@@ -90,6 +90,11 @@ export class ParticipantsTreeProvider implements vscode.TreeDataProvider<vscode.
     if (session) {
       this.disposables.push(
         session.onDidChangeParticipants(() => {
+          this._onDidChangeTreeData.fire();
+        }),
+      );
+      this.disposables.push(
+        session.onDidChangeState(() => {
           this._onDidChangeTreeData.fire();
         }),
       );
@@ -147,7 +152,7 @@ export class ParticipantsTreeProvider implements vscode.TreeDataProvider<vscode.
 
   public dispose(): void {
     for (const d of this.disposables) {
-      d.dispose();
+      d?.dispose();
     }
     this.disposables = [];
     this._onDidChangeTreeData.dispose();

@@ -94,11 +94,11 @@ export class CommentsManager implements vscode.Disposable {
 
     // Listen for incoming comment.op messages
     this.disposables.push(
-      this.connection.on('message', (msg) => {
+      this.connection.onMessage((msg) => {
         if (msg.type === 'comment.op') {
           this.handleCommentOpMessage(msg);
         }
-      }) as unknown as vscode.Disposable,
+      }),
     );
 
     // Watch active/visible editor changes to render comments
@@ -127,6 +127,17 @@ export class CommentsManager implements vscode.Disposable {
       if (!thread.resolved) count++;
     }
     return count;
+  }
+
+  public getThreadIdByVsThread(vsThread: vscode.CommentThread): string | undefined {
+    for (const [id, t] of this.activeThreads.entries()) {
+      if (t === vsThread) return id;
+    }
+    return undefined;
+  }
+
+  public getNormalizedPath(doc: vscode.TextDocument): string | undefined {
+    return this.normalizeDocumentPath(doc);
   }
 
   /**
@@ -421,12 +432,12 @@ export class CommentsManager implements vscode.Disposable {
     this.isDisposed = true;
 
     for (const thread of this.activeThreads.values()) {
-      thread.dispose();
+      thread?.dispose();
     }
     this.activeThreads.clear();
 
     for (const d of this.disposables) {
-      d.dispose();
+      d?.dispose();
     }
     this.disposables = [];
     this._onDidChangeComments.dispose();

@@ -2,20 +2,25 @@ import { describe, it, expect, vi } from 'vitest';
 import * as vscode from 'vscode';
 import { buildDeepLink, buildPasteCode, parseInviteInput } from '../src/invite.js';
 import { SessionLifecycleState, SessionStateChangeEvent } from '../src/session/sessionState.js';
-import { cleanupColiveWorkspaceFolders } from '../src/extension.js';
+import { cleanupColiveWorkspaceFolders, teardownActiveSessionUI } from '../src/extension.js';
+import { ConnectionManager } from '../src/connection.js';
+import { GuestDiagnosticsReceiver } from '../src/diagnostics/diagnosticsService.js';
 
 describe('Invite Link & Paste Code Utilities', () => {
   const sessionId = 'abc123xyz0';
   const secret = 'sec_9876543210_abcdef';
 
-  it('builds standard deep link and paste code', () => {
+  it('builds compact opaque deep link and paste code', () => {
     const deepLink = buildDeepLink(sessionId, secret);
-    expect(deepLink).toBe(
-      `vscode://colive-team.colive/join?session=${encodeURIComponent(sessionId)}&secret=${encodeURIComponent(secret)}`,
-    );
+    expect(deepLink).toContain('vscode://colive-team.colive/join?c=');
+    expect(deepLink).not.toContain('secret='); // Doesn't expose secret openly
 
     const pasteCode = buildPasteCode(sessionId, secret);
-    expect(pasteCode).toBe(`${sessionId}.${secret}`);
+    expect(pasteCode).not.toContain('session=');
+
+    const parsed = parseInviteInput(deepLink);
+    expect(parsed?.sessionId).toBe(sessionId);
+    expect(parsed?.secret).toBe(secret);
   });
 
   it('parses valid paste code correctly', () => {
@@ -36,7 +41,8 @@ describe('Invite Link & Paste Code Utilities', () => {
   it('embeds and parses serverUrl for worldwide Cloudflare connections', () => {
     const serverUrl = 'wss://quick-tunnel-123.trycloudflare.com/ws';
     const deepLink = buildDeepLink(sessionId, secret, serverUrl);
-    expect(deepLink).toContain(`server=${encodeURIComponent(serverUrl)}`);
+    expect(deepLink).toContain('vscode://colive-team.colive/join?c=');
+    expect(deepLink).not.toContain('secret='); // Does not show secrets openly
 
     const parsedDeepLink = parseInviteInput(deepLink);
     expect(parsedDeepLink).not.toBeNull();
@@ -46,8 +52,6 @@ describe('Invite Link & Paste Code Utilities', () => {
 
     // Paste code with server
     const pasteCode = buildPasteCode(sessionId, secret, serverUrl);
-    expect(pasteCode).toBe(`${sessionId}.${secret}@${serverUrl}`);
-
     const parsedPasteCode = parseInviteInput(pasteCode);
     expect(parsedPasteCode).not.toBeNull();
     expect(parsedPasteCode?.sessionId).toBe(sessionId);
@@ -69,6 +73,28 @@ describe('Invite Link & Paste Code Utilities', () => {
     expect(parsed).not.toBeNull();
     expect(parsed?.sessionId).toBe(sessionId);
     expect(parsed?.secret).toBe(secret);
+  });
+
+  it('parses user long URL and converts to a compact opaque URL without exposing secrets openly', () => {
+    const rawLongUrl = 'vscode://colive-team.colive/join?session=Ih9v0uDa&secret=AGUyKmz91stkM9_4AVptzF24i6nx0JhFUNOsTupajx8&server=wss%3A%2F%2Fdeposits-fuel-resolutions-affairs.trycloudflare.com%2Fws';
+    const parsed = parseInviteInput(rawLongUrl);
+    expect(parsed).not.toBeNull();
+    expect(parsed?.sessionId).toBe('Ih9v0uDa');
+    expect(parsed?.secret).toBe('AGUyKmz91stkM9_4AVptzF24i6nx0JhFUNOsTupajx8');
+    expect(parsed?.serverUrl).toBe('wss://deposits-fuel-resolutions-affairs.trycloudflare.com/ws');
+
+    // Generate new compact deep link
+    const compactLink = buildDeepLink(parsed!.sessionId, parsed!.secret, parsed!.serverUrl);
+    expect(compactLink).not.toContain('session=');
+    expect(compactLink).not.toContain('secret=');
+    expect(compactLink).not.toContain('server=');
+    expect(compactLink.length).toBeLessThan(rawLongUrl.length);
+
+    // Parsing the compact link roundtrips accurately
+    const parsedCompact = parseInviteInput(compactLink);
+    expect(parsedCompact?.sessionId).toBe('Ih9v0uDa');
+    expect(parsedCompact?.secret).toBe('AGUyKmz91stkM9_4AVptzF24i6nx0JhFUNOsTupajx8');
+    expect(parsedCompact?.serverUrl).toBe('wss://deposits-fuel-resolutions-affairs.trycloudflare.com/ws');
   });
 
   it('rejects invalid or malformed invite inputs', () => {
@@ -175,7 +201,41 @@ describe('Workspace Folder Cleanup on Reload & Deactivate', () => {
     cleanupColiveWorkspaceFolders();
 
     expect(vscode.workspace.workspaceFolders).toHaveLength(2);
-    expect(vscode.workspace.workspaceFolders.map((f) => f.uri.scheme)).toEqual(['file', 'file']);
+    expect(vscode.workspace.workspaceFolders.map((f) => f.scheme || f.uri.scheme)).toEqual(['file', 'file']);
     expect(vscode.workspace.workspaceFolders.map((f) => f.name)).toEqual(['project', 'other']);
   });
 });
+
+describe('Guest Diagnostics and Comments Safe Disposal', () => {
+  it('disposes GuestDiagnosticsReceiver without Cannot read properties of undefined error', () => {
+    const conn = new ConnectionManager('ws://127.0.0.1:8787/ws');
+    const receiver = new GuestDiagnosticsReceiver(conn, 'CoLive: Test');
+    expect(() => receiver.dispose()).not.toThrow();
+  });
+
+  it('ConnectionManager.on returns a valid disposable', () => {
+    const conn = new ConnectionManager('ws://127.0.0.1:8787/ws');
+    const sub = conn.on('stateChange', () => {});
+    expect(sub).toBeDefined();
+    expect(typeof sub.dispose).toBe('function');
+    expect(() => sub.dispose()).not.toThrow();
+  });
+});
+
+describe('Guest Session Ending and Auto-Leave Cleanup', () => {
+  it('teardownActiveSessionUI cleans up colive virtual folders and resets state', () => {
+    vscode.workspace.updateWorkspaceFolders(
+      0,
+      vscode.workspace.workspaceFolders.length,
+      { uri: vscode.Uri.file('/home/user/project'), name: 'project' },
+      { uri: vscode.Uri.parse('colive:/HostShared'), name: 'CoLive: Host' },
+    );
+    expect(vscode.workspace.workspaceFolders).toHaveLength(2);
+
+    teardownActiveSessionUI();
+
+    expect(vscode.workspace.workspaceFolders).toHaveLength(1);
+    expect(vscode.workspace.workspaceFolders[0].name).toBe('project');
+  });
+});
+

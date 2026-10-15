@@ -37,7 +37,15 @@ export abstract class SessionController implements vscode.Disposable {
   public abstract endSession(): Promise<void>;
   public abstract copyInvite(): Promise<void>;
 
+  protected isDisposed = false;
+
+  public isSessionDisposed(): boolean {
+    return this.isDisposed;
+  }
+
   public dispose(): void {
+    if (this.isDisposed) return;
+    this.isDisposed = true;
     this._onDidChangeState.dispose();
     this._onDidChangeParticipants.dispose();
     if (this.connection) {

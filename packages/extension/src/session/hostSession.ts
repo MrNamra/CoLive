@@ -10,7 +10,7 @@ import {
   ServerSessionCreated,
 } from '@colive/protocol';
 import { ConnectionManager } from '../connection.js';
-import { buildDeepLink, buildPasteCode } from '../invite.js';
+import { buildDeepLink, buildPasteCode, buildWebInviteUrl } from '../invite.js';
 import { Logger } from '../logger.js';
 import { Strings } from '../strings.js';
 import { HostFileService } from '../host/fileService.js';
@@ -350,8 +350,26 @@ export class HostSession extends SessionController {
   public async copyInvite(): Promise<void> {
     const inviteServer = this.publicServerUrl || this.serverUrl;
     const deepLink = buildDeepLink(this.sessionId, this.inviteSecret, inviteServer);
+    const webLink = buildWebInviteUrl(this.sessionId, this.inviteSecret, inviteServer);
+    const code = buildPasteCode(this.sessionId, this.inviteSecret, inviteServer);
+
     await vscode.env.clipboard.writeText(deepLink);
-    vscode.window.showInformationMessage('CoLive: Worldwide invite link copied to clipboard.');
+
+    const buttons: string[] = [];
+    if (webLink) buttons.push('Copy Web Link');
+    buttons.push('Copy Short Code');
+
+    vscode.window
+      .showInformationMessage('CoLive: Short invite link copied to clipboard.', ...buttons)
+      .then(async (action) => {
+        if (action === 'Copy Web Link' && webLink) {
+          await vscode.env.clipboard.writeText(webLink);
+          vscode.window.showInformationMessage('CoLive: Web invite link copied to clipboard.');
+        } else if (action === 'Copy Short Code') {
+          await vscode.env.clipboard.writeText(code);
+          vscode.window.showInformationMessage('CoLive: Short invite code copied to clipboard.');
+        }
+      });
   }
 
   public async endSession(): Promise<void> {
@@ -366,36 +384,70 @@ export class HostSession extends SessionController {
   }
 
   public override dispose(): void {
+    if (this.isDisposed) return;
+
     if (this.terminalService) {
-      this.terminalService.dispose();
+      try {
+        this.terminalService.dispose();
+      } catch (err) {
+        Logger.warn('Error disposing terminalService', { err });
+      }
       this.terminalService = null;
     }
     if (this.diagnosticsBroadcaster) {
-      this.diagnosticsBroadcaster.dispose();
+      try {
+        this.diagnosticsBroadcaster.dispose();
+      } catch (err) {
+        Logger.warn('Error disposing diagnosticsBroadcaster', { err });
+      }
       this.diagnosticsBroadcaster = null;
     }
     if (this.commentsManager) {
-      this.commentsManager.dispose();
+      try {
+        this.commentsManager.dispose();
+      } catch (err) {
+        Logger.warn('Error disposing commentsManager', { err });
+      }
       this.commentsManager = null;
     }
     if (this.followController) {
-      this.followController.dispose();
+      try {
+        this.followController.dispose();
+      } catch (err) {
+        Logger.warn('Error disposing followController', { err });
+      }
       this.followController = null;
     }
     if (this.cursorRenderer) {
-      this.cursorRenderer.dispose();
+      try {
+        this.cursorRenderer.dispose();
+      } catch (err) {
+        Logger.warn('Error disposing cursorRenderer', { err });
+      }
       this.cursorRenderer = null;
     }
     if (this.presenceManager) {
-      this.presenceManager.dispose();
+      try {
+        this.presenceManager.dispose();
+      } catch (err) {
+        Logger.warn('Error disposing presenceManager', { err });
+      }
       this.presenceManager = null;
     }
     if (this.syncManager) {
-      this.syncManager.dispose();
+      try {
+        this.syncManager.dispose();
+      } catch (err) {
+        Logger.warn('Error disposing syncManager', { err });
+      }
       this.syncManager = null;
     }
     if (this.fileService) {
-      this.fileService.dispose();
+      try {
+        this.fileService.dispose();
+      } catch (err) {
+        Logger.warn('Error disposing fileService', { err });
+      }
       this.fileService = null;
     }
     super.dispose();
