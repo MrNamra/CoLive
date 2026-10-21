@@ -5,3 +5,9 @@ esbuild.js
 .vscode/**
 node_modules/**
 **/*.ts
+*.vsix
+**/*.map
+.git*
+.DS_Store
+**/*.log
+scratch/**

@@ -533,165 +533,30 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
   <title>CoLive Chat</title>
   <style nonce="${nonce}">
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: var(--vscode-font-family);
-      font-size: var(--vscode-font-size);
-      color: var(--vscode-foreground);
-      background-color: var(--vscode-sideBar-background);
-      display: flex;
-      flex-direction: column;
-      height: 100vh;
-      overflow: hidden;
-    }
-    #messages-container {
-      flex: 1;
-      overflow-y: auto;
-      padding: 10px 8px;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-    }
-    .empty-state {
-      margin: auto;
-      text-align: center;
-      color: var(--vscode-descriptionForeground);
-      font-size: 11px;
-      padding: 24px 16px;
-      line-height: 1.5;
-    }
-    .chat-msg {
-      position: relative;
-      padding: 6px 10px;
-      border-radius: 6px;
-      max-width: 88%;
-      word-break: break-word;
-      font-size: 12px;
-      line-height: 1.4;
-    }
-    .chat-msg:hover .msg-delete-btn {
-      opacity: 0.8;
-      visibility: visible;
-    }
-    .chat-msg.self {
-      align-self: flex-end;
-      background-color: var(--vscode-button-background);
-      color: var(--vscode-button-foreground);
-    }
-    .chat-msg.remote {
-      align-self: flex-start;
-      background-color: var(--vscode-editor-inactiveSelectionBackground);
-      color: var(--vscode-foreground);
-    }
-    .chat-msg.system {
-      align-self: center;
-      background: none;
-      color: var(--vscode-descriptionForeground);
-      font-style: italic;
-      font-size: 11px;
-      text-align: center;
-      max-width: 95%;
-    }
-    .msg-header {
-      font-weight: 600;
-      font-size: 11px;
-      margin-bottom: 2px;
-      opacity: 0.85;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 8px;
-    }
-    .msg-meta {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-    .msg-time {
-      font-weight: normal;
-      font-size: 10px;
-      opacity: 0.7;
-    }
-    .msg-delete-btn {
-      background: none;
-      border: none;
-      color: inherit;
-      cursor: pointer;
-      font-size: 11px;
-      line-height: 1;
-      padding: 1px 3px;
-      border-radius: 3px;
-      opacity: 0;
-      visibility: hidden;
-      transition: opacity 0.15s;
-    }
-    .msg-delete-btn:hover {
-      opacity: 1 !important;
-      background-color: rgba(255, 255, 255, 0.2);
-    }
-    .chat-msg.remote .msg-delete-btn:hover {
-      background-color: rgba(0, 0, 0, 0.15);
-    }
-    .msg-body {
-      white-space: pre-wrap;
-    }
-    .chat-link {
-      color: var(--vscode-textLink-foreground);
-      text-decoration: underline;
-      cursor: pointer;
-    }
-    #chat-toolbar {
-      display: flex;
-      justify-content: flex-end;
-      padding: 4px 8px;
-      border-bottom: 1px solid var(--vscode-sideBar-border, rgba(128, 128, 128, 0.15));
-      background-color: var(--vscode-sideBar-background);
-    }
-    .toolbar-btn {
-      background: none;
-      border: none;
-      color: var(--vscode-descriptionForeground);
-      font-size: 11px;
-      cursor: pointer;
-      padding: 2px 6px;
-      border-radius: 3px;
-    }
-    .toolbar-btn:hover {
-      color: var(--vscode-foreground);
-      background-color: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.15));
-    }
-    #input-container {
-      display: flex;
-      padding: 8px;
-      border-top: 1px solid var(--vscode-sideBar-border, rgba(128, 128, 128, 0.2));
-      gap: 6px;
-      background-color: var(--vscode-sideBar-background);
-    }
-    #chat-input {
-      flex: 1;
-      padding: 6px 8px;
-      background-color: var(--vscode-input-background);
-      color: var(--vscode-input-foreground);
-      border: 1px solid var(--vscode-input-border, transparent);
-      border-radius: 4px;
-      font-family: inherit;
-      font-size: 12px;
-    }
-    #chat-input:focus {
-      outline: 1px solid var(--vscode-focusBorder);
-    }
-    #send-btn {
-      padding: 6px 12px;
-      background-color: var(--vscode-button-background);
-      color: var(--vscode-button-foreground);
-      border: none;
-      border-radius: 4px;
-      cursor: pointer;
-      font-size: 12px;
-      font-weight: 500;
-    }
-    #send-btn:hover {
-      background-color: var(--vscode-button-hoverBackground);
-    }
+    body { font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); color: var(--vscode-foreground); background-color: var(--vscode-sideBar-background); display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+    #messages-container { flex: 1; overflow-y: auto; padding: 10px 8px; display: flex; flex-direction: column; gap: 8px; }
+    .empty-state { margin: auto; text-align: center; color: var(--vscode-descriptionForeground); font-size: 11px; padding: 24px 16px; line-height: 1.5; }
+    .chat-msg { position: relative; padding: 6px 10px; border-radius: 6px; max-width: 88%; word-break: break-word; font-size: 12px; line-height: 1.4; }
+    .chat-msg:hover .msg-delete-btn { opacity: 0.8; visibility: visible; }
+    .chat-msg.self { align-self: flex-end; background-color: var(--vscode-button-background); color: var(--vscode-button-foreground); }
+    .chat-msg.remote { align-self: flex-start; background-color: var(--vscode-editor-inactiveSelectionBackground); color: var(--vscode-foreground); }
+    .chat-msg.system { align-self: center; background: none; color: var(--vscode-descriptionForeground); font-style: italic; font-size: 11px; text-align: center; max-width: 95%; }
+    .msg-header { font-weight: 600; font-size: 11px; margin-bottom: 2px; opacity: 0.85; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    .msg-meta { display: flex; align-items: center; gap: 6px; }
+    .msg-time { font-weight: normal; font-size: 10px; opacity: 0.7; }
+    .msg-delete-btn { background: none; border: none; color: inherit; cursor: pointer; font-size: 11px; line-height: 1; padding: 1px 3px; border-radius: 3px; opacity: 0; visibility: hidden; transition: opacity 0.15s; }
+    .msg-delete-btn:hover { opacity: 1 !important; background-color: rgba(255, 255, 255, 0.2); }
+    .chat-msg.remote .msg-delete-btn:hover { background-color: rgba(0, 0, 0, 0.15); }
+    .msg-body { white-space: pre-wrap; }
+    .chat-link { color: var(--vscode-textLink-foreground); text-decoration: underline; cursor: pointer; }
+    #chat-toolbar { display: flex; justify-content: flex-end; padding: 4px 8px; border-bottom: 1px solid var(--vscode-sideBar-border, rgba(128, 128, 128, 0.15)); background-color: var(--vscode-sideBar-background); }
+    .toolbar-btn { background: none; border: none; color: var(--vscode-descriptionForeground); font-size: 11px; cursor: pointer; padding: 2px 6px; border-radius: 3px; }
+    .toolbar-btn:hover { color: var(--vscode-foreground); background-color: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.15)); }
+    #input-container { display: flex; padding: 8px; border-top: 1px solid var(--vscode-sideBar-border, rgba(128, 128, 128, 0.2)); gap: 6px; background-color: var(--vscode-sideBar-background); }
+    #chat-input { flex: 1; padding: 6px 8px; background-color: var(--vscode-input-background); color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border, transparent); border-radius: 4px; font-family: inherit; font-size: 12px; }
+    #chat-input:focus { outline: 1px solid var(--vscode-focusBorder); }
+    #send-btn { padding: 6px 12px; background-color: var(--vscode-button-background); color: var(--vscode-button-foreground); border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 500; }
+    #send-btn:hover { background-color: var(--vscode-button-hoverBackground); }
   </style>
 </head>
 <body>
