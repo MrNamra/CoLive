@@ -95,12 +95,31 @@ export class ConnectionManager {
     }
   }
 
-  public async connect(maxRetries = 6, retryDelayMs = 2000): Promise<void> {
+  private cleanupSocket(): void {
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    if (this.ws) {
+      try {
+        this.ws.removeAllListeners();
+        this.ws.on('error', () => {}); // Prevent unhandled error event
+        this.ws.terminate();
+      } catch {
+        // ignore
+      }
+      this.ws = null;
+    }
+  }
+
+  public async connect(maxRetries = 10, retryDelayMs = 1500): Promise<void> {
     this.intentionallyClosed = false;
     let lastErr: unknown;
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       if (this.intentionallyClosed) return;
+      this.cleanupSocket();
+
       try {
         await this.attemptConnect();
         return;
@@ -108,15 +127,24 @@ export class ConnectionManager {
         lastErr = err;
         if (this.intentionallyClosed) return;
         const msg = err instanceof Error ? err.message : String(err);
-        const isCloudflareEdgePropagating =
+        const isTransientError =
           msg.includes('530') ||
           msg.includes('520') ||
           msg.includes('502') ||
           msg.includes('503') ||
+          msg.includes('504') ||
+          msg.includes('404') ||
           msg.includes('ENOTFOUND') ||
-          msg.includes('closed before opening');
+          msg.includes('EAI_AGAIN') ||
+          msg.includes('ECONNREFUSED') ||
+          msg.includes('ECONNRESET') ||
+          msg.includes('ETIMEDOUT') ||
+          msg.includes('EHOSTUNREACH') ||
+          msg.includes('socket hang up') ||
+          msg.includes('closed before opening') ||
+          msg.includes('handshake');
 
-        if (isCloudflareEdgePropagating && attempt < maxRetries) {
+        if (isTransientError && attempt < maxRetries) {
           Logger.info(
             `Relay server edge warming up (${msg}). Retrying connection (${attempt}/${maxRetries}) in ${retryDelayMs}ms...`,
           );
@@ -142,9 +170,21 @@ export class ConnectionManager {
       this.setState(this.reconnectAttempt > 0 ? 'reconnecting' : 'connecting');
       Logger.info(`Connecting to relay server at: ${this.url}`);
 
+      let settled = false;
+      const handshakeTimeoutMs = 10000;
+
+      const handshakeTimer = setTimeout(() => {
+        if (!settled) {
+          settled = true;
+          this.cleanupSocket();
+          reject(new Error('Connection handshake timed out waiting for helloAck'));
+        }
+      }, handshakeTimeoutMs);
+
       try {
         this.ws = new WebSocket(this.url);
       } catch (err) {
+        clearTimeout(handshakeTimer);
         this.setState('disconnected');
         reject(err);
         return;
@@ -162,7 +202,15 @@ export class ConnectionManager {
           clientVersion: '0.1.0',
           role: this.role,
         };
-        this.ws!.send(JSON.stringify(helloMsg));
+        try {
+          this.ws?.send(JSON.stringify(helloMsg));
+        } catch (sendErr) {
+          if (!settled) {
+            settled = true;
+            clearTimeout(handshakeTimer);
+            reject(sendErr);
+          }
+        }
       });
 
       this.ws.on('message', (data: RawData, isBinary: boolean) => {
@@ -182,23 +230,31 @@ export class ConnectionManager {
 
           if (msg.type === 'helloAck') {
             Logger.info('Handshake acknowledged by server');
-            const wasReconnecting = this.state === 'reconnecting';
-            this.setState('connected');
-            this.reconnectAttempt = 0;
-            this.flushQueue();
+            clearTimeout(handshakeTimer);
+            if (!settled) {
+              settled = true;
+              const wasReconnecting = this.state === 'reconnecting';
+              this.setState('connected');
+              this.reconnectAttempt = 0;
+              this.flushQueue();
 
-            if (wasReconnecting) {
-              this.emit('reconnected');
+              if (wasReconnecting) {
+                this.emit('reconnected');
+              }
+              resolve();
             }
-            resolve();
             return;
           }
 
           if (msg.type === 'error' && msg.code === 'VERSION_MISMATCH') {
             Logger.error('Version mismatch error received from server', msg.message);
-            vscode.window.showErrorMessage(`CoLive connection failed: ${msg.message}`);
-            this.disconnect();
-            reject(new Error(msg.message));
+            clearTimeout(handshakeTimer);
+            if (!settled) {
+              settled = true;
+              vscode.window.showErrorMessage(`CoLive connection failed: ${msg.message}`);
+              this.disconnect();
+              reject(new Error(msg.message));
+            }
             return;
           }
 
@@ -223,22 +279,32 @@ export class ConnectionManager {
 
       this.ws.on('close', (code, reason) => {
         Logger.info(`WebSocket closed with code ${code}: ${reason.toString()}`);
+        clearTimeout(handshakeTimer);
         this.emit('close', code, reason.toString());
 
-        if (!opened && !this.intentionallyClosed) {
-          reject(new Error(`WebSocket connection closed before opening (code: ${code})`));
+        if (!settled) {
+          settled = true;
+          if (!opened) {
+            reject(new Error(`WebSocket connection closed before opening (code: ${code})`));
+          } else {
+            reject(new Error(`WebSocket connection closed during handshake (code: ${code})`));
+          }
+          return;
         }
 
-        if (!this.intentionallyClosed) {
+        // Only schedule reconnect if the connection had already been connected
+        if (!this.intentionallyClosed && this.state === 'connected') {
           this.scheduleReconnect();
-        } else {
+        } else if (this.intentionallyClosed) {
           this.setState('disconnected');
         }
       });
 
       this.ws.on('error', (err) => {
         Logger.error('WebSocket error occurred', err);
-        if (!opened && !this.intentionallyClosed) {
+        clearTimeout(handshakeTimer);
+        if (!settled) {
+          settled = true;
           reject(err);
         }
       });

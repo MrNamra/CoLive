@@ -76,11 +76,11 @@ export class HostSession extends SessionController {
         this.setState('reconnecting');
       } else if (connState === 'connected' && this.state === 'reconnecting') {
         this.setState('active');
-        this.reclaimHostSession();
       }
     });
 
     this.connection.on('reconnected', () => {
+      this.setState('active');
       this.reclaimHostSession();
     });
 
@@ -287,7 +287,7 @@ export class HostSession extends SessionController {
             accept: true,
             permission: 'readOnly',
           });
-        } else {
+        } else if (decision === Strings.decline) {
           this.connection?.send({
             v: PROTOCOL_VERSION,
             type: 'host.joinDecision',
@@ -296,6 +296,63 @@ export class HostSession extends SessionController {
             permission: 'readOnly',
             reason: 'Host declined the join request',
           });
+        } else {
+          // Toast was dismissed or focus shifted without explicit decision.
+          // Re-prompt once after a short delay so host doesn't accidentally miss the join request.
+          Logger.info(`Join request from "${req.displayName}" not explicitly answered, re-prompting host`);
+          setTimeout(() => {
+            if (this.state === 'active') {
+              vscode.window
+                .showInformationMessage(
+                  `CoLive: "${req.displayName}" is waiting to join your session.`,
+                  Strings.acceptReadWrite,
+                  Strings.acceptTerminalAccess,
+                  Strings.acceptReadOnly,
+                  Strings.decline,
+                )
+                .then((retryDecision) => {
+                  if (retryDecision === Strings.acceptReadWrite) {
+                    this.connection?.send({
+                      v: PROTOCOL_VERSION,
+                      type: 'host.joinDecision',
+                      requestId: req.requestId,
+                      accept: true,
+                      permission: 'readWrite',
+                    });
+                  } else if (retryDecision === Strings.acceptTerminalAccess) {
+                    this.connection?.send({
+                      v: PROTOCOL_VERSION,
+                      type: 'host.joinDecision',
+                      requestId: req.requestId,
+                      accept: true,
+                      permission: 'terminalAccess',
+                    });
+                    if (this.terminalService) {
+                      for (const t of this.terminalService.getActiveTerminals()) {
+                        t.guestWriteAllowed = true;
+                      }
+                    }
+                  } else if (retryDecision === Strings.acceptReadOnly) {
+                    this.connection?.send({
+                      v: PROTOCOL_VERSION,
+                      type: 'host.joinDecision',
+                      requestId: req.requestId,
+                      accept: true,
+                      permission: 'readOnly',
+                    });
+                  } else if (retryDecision === Strings.decline) {
+                    this.connection?.send({
+                      v: PROTOCOL_VERSION,
+                      type: 'host.joinDecision',
+                      requestId: req.requestId,
+                      accept: false,
+                      permission: 'readOnly',
+                      reason: 'Host declined the join request',
+                    });
+                  }
+                });
+            }
+          }, 1500);
         }
       });
   }

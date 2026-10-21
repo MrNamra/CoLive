@@ -8,7 +8,13 @@ import {
   TerminalOpenReq,
   TerminalOpenRes,
 } from '@colive/protocol';
-import { HostTerminalService } from '../src/terminal/HostTerminalService.js';
+import os from 'node:os';
+import {
+  HostTerminalService,
+  resolveHostCwd,
+  resolveHostShell,
+  normalizeTerminalInput,
+} from '../src/terminal/HostTerminalService.js';
 import { GuestTerminalService } from '../src/terminal/GuestTerminalService.js';
 import { ConnectionManager } from '../src/connection.js';
 
@@ -160,6 +166,67 @@ describe('Milestone 11: Shared Terminal (Host & Guest Pseudoterminals)', () => {
     for (const l of guestMessageListeners) l(closeMsg);
 
     expect(closed).toBe(true);
+
+    guestService.dispose();
+  });
+
+  it('resolveHostCwd falls back to home directory for virtual paths or non-existent folders', () => {
+    // A virtual scheme path like "/CoLive: admin1" does not exist physically on disk
+    const virtualPath = '/CoLive: admin1';
+    const resolvedVirtual = resolveHostCwd(virtualPath);
+    expect(resolvedVirtual).toBe(os.homedir());
+
+    // A real directory returns itself
+    const realPath = process.cwd();
+    const resolvedReal = resolveHostCwd(realPath);
+    expect(resolvedReal).toBe(realPath);
+  });
+
+  it('resolveHostShell returns a shell command and arguments', () => {
+    const { shell, args } = resolveHostShell();
+    expect(typeof shell).toBe('string');
+    expect(shell.length).toBeGreaterThan(0);
+    expect(Array.isArray(args)).toBe(true);
+  });
+
+  it('normalizeTerminalInput normalizes carriage returns and newlines cleanly', () => {
+    const normalizedEnter = normalizeTerminalInput('ls -la\r');
+    if (process.platform === 'win32') {
+      expect(normalizedEnter).toBe('ls -la\r\n');
+    } else {
+      expect(normalizedEnter).toBe('ls -la\n');
+    }
+
+    const normalizedMultiLine = normalizeTerminalInput('first\r\nsecond\r');
+    if (process.platform === 'win32') {
+      expect(normalizedMultiLine).toBe('first\r\nsecond\r\n');
+    } else {
+      expect(normalizedMultiLine).toBe('first\nsecond\n');
+    }
+  });
+
+  it('GuestTerminalService.createSharedPseudoterminal returns pty and connects to host', async () => {
+    const guestService = new GuestTerminalService(mockConnectionGuest);
+    const ptyPromise = guestService.createSharedPseudoterminal('Profile Terminal');
+
+    const openReq = guestSentMessages.find((m) => m.type === 'terminal.open.req') as TerminalOpenReq;
+    expect(openReq).toBeDefined();
+    expect(openReq.name).toBe('Profile Terminal');
+
+    for (const l of guestMessageListeners) {
+      l({
+        v: PROTOCOL_VERSION,
+        type: 'terminal.open.res',
+        id: openReq.id,
+        terminalId: 'term_profile_99',
+      } as TerminalOpenRes);
+    }
+
+    const result = await ptyPromise;
+    expect(result.terminalId).toBe('term_profile_99');
+    expect(result.pty).toBeDefined();
+    expect(typeof result.pty.open).toBe('function');
+    expect(typeof result.pty.close).toBe('function');
 
     guestService.dispose();
   });

@@ -23,6 +23,16 @@ let participantsTree: ParticipantsTreeProvider | null = null;
 let commentsTree: CommentsTreeProvider | null = null;
 let chatProvider: ChatViewProvider | null = null;
 let tunnelManager: TunnelManager | null = null;
+export let extensionContext: vscode.ExtensionContext | null = null;
+
+export interface PersistedGuestSession {
+  sessionId: string;
+  secret: string;
+  serverUrl?: string;
+  guestToken: string;
+  displayName: string;
+  savedAt: number;
+}
 
 export function cleanupColiveWorkspaceFolders(): void {
   const folders = vscode.workspace.workspaceFolders;
@@ -44,11 +54,22 @@ export function updateSessionContext(session: SessionController | null): void {
 }
 
 export function activate(context: vscode.ExtensionContext): void {
+  extensionContext = context;
   Logger.initialize();
   Logger.info('CoLive extension activating...');
 
-  // Prune any lingering virtual workspace folders from previous sessions or window reload
-  cleanupColiveWorkspaceFolders();
+  const persisted = context.globalState.get<PersistedGuestSession>('colive.persistedGuestSession');
+  if (persisted && Date.now() - persisted.savedAt < 60000) {
+    Logger.info(`Restoring guest session after workspace transition (Session ID: ${persisted.sessionId})...`);
+    context.globalState.update('colive.persistedGuestSession', undefined);
+    setTimeout(() => {
+      joinSessionByIdAndSecret(persisted.sessionId, persisted.secret, persisted.serverUrl, persisted.guestToken);
+    }, 150);
+  } else {
+    context.globalState.update('colive.persistedGuestSession', undefined);
+    // Prune any lingering virtual workspace folders from previous closed sessions
+    cleanupColiveWorkspaceFolders();
+  }
   updateSessionContext(null);
 
   tunnelManager = new TunnelManager(context.globalStorageUri.fsPath);
@@ -565,6 +586,49 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 
   context.subscriptions.push(
+    vscode.commands.registerCommand('colive.openSharedTerminal', async () => {
+      if (!activeSession || activeSession.getState() !== 'active') {
+        vscode.window.showInformationMessage('You must be in an active CoLive session to access the host terminal.');
+        return;
+      }
+
+      if (activeSession instanceof GuestSession && activeSession.terminalService) {
+        try {
+          await activeSession.terminalService.openSharedTerminal();
+        } catch (err: unknown) {
+          vscode.window.showErrorMessage(`Failed to open shared terminal: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      } else if (activeSession instanceof HostSession && activeSession.terminalService) {
+        activeSession.terminalService.shareTerminal();
+        vscode.window.showInformationMessage('CoLive: Shared terminal started on host. Output is mirrored to guests.');
+      }
+    }),
+  );
+
+  context.subscriptions.push(
+    vscode.window.registerTerminalProfileProvider('colive.hostTerminal', {
+      async provideTerminalProfile(): Promise<vscode.TerminalProfile | undefined> {
+        if (!activeSession || activeSession.getState() !== 'active') {
+          vscode.window.showWarningMessage('You must be in an active CoLive session to access the host terminal.');
+          return undefined;
+        }
+
+        if (activeSession instanceof GuestSession && activeSession.terminalService) {
+          const { pty } = await activeSession.terminalService.createSharedPseudoterminal();
+          return new vscode.TerminalProfile({
+            name: 'CoLive: Host Terminal',
+            pty,
+            isTransient: true,
+            iconPath: new vscode.ThemeIcon('broadcast'),
+          });
+        }
+
+        return undefined;
+      },
+    }),
+  );
+
+  context.subscriptions.push(
     vscode.commands.registerCommand('colive.toggleTerminalWrite', async () => {
       if (!(activeSession instanceof HostSession) || !activeSession.terminalService) {
         vscode.window.showInformationMessage('Only the host can toggle terminal write permissions.');
@@ -616,6 +680,9 @@ export function teardownActiveSessionUI(session?: SessionController | null): voi
   activeSession = null;
   updateSessionContext(null);
   cleanupColiveWorkspaceFolders();
+  if (extensionContext) {
+    extensionContext.globalState.update('colive.persistedGuestSession', undefined);
+  }
   tunnelManager?.stopTunnel();
   statusBar?.setSession(null);
   participantsTree?.setSession(null);
@@ -814,6 +881,7 @@ async function joinSessionByIdAndSecret(
   sessionId: string,
   secret: string,
   serverUrl?: string,
+  guestToken?: string,
 ): Promise<void> {
   Logger.show(true);
   Logger.info(`--- Starting CoLive Guest Join (Session ID: ${sessionId}) ---`);
@@ -823,7 +891,20 @@ async function joinSessionByIdAndSecret(
   const displayName = await resolveDisplayName();
   Logger.info(`Guest target relay URL: ${targetServerUrl}, display name: ${displayName}`);
 
-  const guestSession = new GuestSession(targetServerUrl, sessionId, secret, displayName);
+  const guestSession = new GuestSession(targetServerUrl, sessionId, secret, displayName, guestToken);
+  guestSession.onJoinAccepted = (token: string) => {
+    if (extensionContext) {
+      extensionContext.globalState.update('colive.persistedGuestSession', {
+        sessionId,
+        secret,
+        serverUrl: targetServerUrl,
+        guestToken: token,
+        displayName,
+        savedAt: Date.now(),
+      });
+    }
+  };
+
   try {
     activeSession = guestSession;
     statusBar?.setSession(guestSession);
@@ -896,12 +977,18 @@ async function endCurrentSession(): Promise<void> {
 
 export function deactivate(): void {
   Logger.info('CoLive extension deactivating...');
-  if (activeSession) {
+  const isReloadTransition = Boolean(
+    extensionContext?.globalState.get<PersistedGuestSession>('colive.persistedGuestSession'),
+  );
+
+  if (activeSession && !isReloadTransition) {
     activeSession.endSession();
     activeSession = null;
   }
   updateSessionContext(null);
-  cleanupColiveWorkspaceFolders();
+  if (!isReloadTransition) {
+    cleanupColiveWorkspaceFolders();
+  }
   tunnelManager?.stopTunnel();
   statusBar?.dispose();
   participantsTree?.dispose();

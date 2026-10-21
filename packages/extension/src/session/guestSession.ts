@@ -17,6 +17,8 @@ import { PresenceManager } from '../presence/PresenceManager.js';
 import { RemoteCursorRenderer } from '../presence/RemoteCursorRenderer.js';
 import { FollowController } from '../presence/FollowController.js';
 import { CommentsManager } from '../comments/CommentsManager.js';
+import os from 'node:os';
+import fs from 'node:fs';
 import { GuestDiagnosticsReceiver } from '../diagnostics/diagnosticsService.js';
 import { GuestTerminalService } from '../terminal/index.js';
 import { SessionController } from './sessionController.js';
@@ -37,6 +39,9 @@ export class GuestSession extends SessionController {
   public commentsManager: CommentsManager | null = null;
   public diagnosticsReceiver: GuestDiagnosticsReceiver | null = null;
   public terminalService: GuestTerminalService | null = null;
+  public onJoinAccepted?: (guestToken: string) => void;
+  public isReloading = false;
+  private previousTerminalCwd?: string;
   private fsRegistration: vscode.Disposable | null = null;
   private mountedFolderUri: vscode.Uri | null = null;
   private serverUrl: string;
@@ -62,8 +67,6 @@ export class GuestSession extends SessionController {
     this.connection.on('stateChange', (connState) => {
       if (connState === 'reconnecting') {
         this.setState('reconnecting');
-      } else if (connState === 'connected' && this.state === 'reconnecting') {
-        this.rejoinWithToken();
       }
     });
 
@@ -109,6 +112,9 @@ export class GuestSession extends SessionController {
           this.permission = res.permission;
           this.hostInfo = res.hostInfo;
 
+          // Notify listener (e.g. extension persistence) before mounting workspace folder
+          this.onJoinAccepted?.(this.guestToken);
+
           // Set host and all participants
           this.participantsMap.set(res.hostInfo.id, res.hostInfo);
           for (const p of res.participants) {
@@ -148,8 +154,30 @@ export class GuestSession extends SessionController {
             const rootUri = vscode.Uri.parse(`colive:/${encodeURIComponent(folderName)}`);
             this.mountedFolderUri = rootUri;
 
-            const existingFolders = vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders.length : 0;
-            vscode.workspace.updateWorkspaceFolders(existingFolders, 0, { uri: rootUri, name: folderName });
+            const folders = vscode.workspace.workspaceFolders;
+            if (!folders || folders.length === 0) {
+              // Transitioning from empty window to workspace triggers window reload in VS Code
+              this.isReloading = true;
+            }
+
+            const existingColiveIdx = folders
+              ? folders.findIndex((f) => f.uri.scheme === CoLiveFileSystemProvider.SCHEME)
+              : -1;
+
+            if (existingColiveIdx >= 0) {
+              vscode.workspace.updateWorkspaceFolders(existingColiveIdx, 1, { uri: rootUri, name: folderName });
+            } else {
+              const insertAt = folders ? folders.length : 0;
+              vscode.workspace.updateWorkspaceFolders(insertAt, 0, { uri: rootUri, name: folderName });
+            }
+
+            // Prevent VS Code integrated terminal from failing with "cwd does not exist" on virtual workspace schemes
+            const termConfig = vscode.workspace.getConfiguration('terminal.integrated');
+            const inspect = termConfig.inspect<string>('cwd');
+            this.previousTerminalCwd = inspect?.globalValue;
+            if (!this.previousTerminalCwd || !fs.existsSync(this.previousTerminalCwd)) {
+              await termConfig.update('cwd', os.homedir(), vscode.ConfigurationTarget.Global);
+            }
           } catch (fsErr) {
             Logger.warn('Virtual FileSystemProvider registration note', { fsErr });
           }
@@ -383,7 +411,7 @@ export class GuestSession extends SessionController {
       this.syncManager = null;
     }
 
-    if (vscode.workspace.workspaceFolders) {
+    if (vscode.workspace.workspaceFolders && !this.isReloading) {
       for (let i = vscode.workspace.workspaceFolders.length - 1; i >= 0; i--) {
         const folder = vscode.workspace.workspaceFolders[i];
         if (folder.uri.scheme === 'colive' || (this.mountedFolderUri && folder.uri.toString() === this.mountedFolderUri.toString())) {
@@ -391,6 +419,15 @@ export class GuestSession extends SessionController {
         }
       }
       this.mountedFolderUri = null;
+    }
+
+    if (!this.isReloading) {
+      try {
+        const termConfig = vscode.workspace.getConfiguration('terminal.integrated');
+        termConfig.update('cwd', this.previousTerminalCwd ?? undefined, vscode.ConfigurationTarget.Global);
+      } catch (termErr) {
+        Logger.warn('Error restoring terminal cwd', { termErr });
+      }
     }
 
     if (this.fsRegistration) {

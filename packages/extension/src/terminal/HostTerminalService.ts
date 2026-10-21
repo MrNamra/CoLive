@@ -1,6 +1,9 @@
 import * as vscode from 'vscode';
 import { spawn, ChildProcessWithoutNullStreams } from 'node:child_process';
 import crypto from 'node:crypto';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import {
   ColiveMessage,
   PROTOCOL_VERSION,
@@ -12,6 +15,65 @@ import {
   TerminalResize,
 } from '@colive/protocol';
 import { ConnectionManager } from '../connection.js';
+
+export function resolveHostShell(): { shell: string; args: string[] } {
+  if (process.platform === 'win32') {
+    // Windows: Check custom SHELL (e.g. Git Bash), PowerShell, or cmd.exe
+    const envShell = process.env.SHELL;
+    if (envShell && fs.existsSync(envShell)) {
+      return { shell: envShell, args: ['-i'] };
+    }
+    const systemRoot = process.env.SystemRoot || process.env.windir || 'C:\\Windows';
+    const pwshPath = path.join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+    if (fs.existsSync(pwshPath)) {
+      return { shell: pwshPath, args: ['-NoLogo'] };
+    }
+    const comSpec = process.env.COMSPEC || 'cmd.exe';
+    return { shell: comSpec, args: [] };
+  } else if (process.platform === 'darwin') {
+    // macOS: Use user's SHELL or default zsh/bash with login + interactive flags
+    const envShell = process.env.SHELL;
+    if (envShell && fs.existsSync(envShell)) {
+      return { shell: envShell, args: ['-l', '-i'] };
+    }
+    if (fs.existsSync('/bin/zsh')) {
+      return { shell: '/bin/zsh', args: ['-l', '-i'] };
+    }
+    return { shell: '/bin/bash', args: ['-l', '-i'] };
+  } else {
+    // Linux / other Unix
+    const envShell = process.env.SHELL;
+    if (envShell && fs.existsSync(envShell)) {
+      return { shell: envShell, args: ['-i'] };
+    }
+    if (fs.existsSync('/bin/bash')) {
+      return { shell: '/bin/bash', args: ['-i'] };
+    }
+    return { shell: '/bin/sh', args: ['-i'] };
+  }
+}
+
+export function resolveHostCwd(workspaceRoot: string): string {
+  if (workspaceRoot && typeof workspaceRoot === 'string') {
+    try {
+      if (fs.existsSync(workspaceRoot) && fs.statSync(workspaceRoot).isDirectory()) {
+        return workspaceRoot;
+      }
+    } catch {
+      // Fall through to homedir
+    }
+  }
+  return os.homedir();
+}
+
+export function normalizeTerminalInput(data: string): string {
+  if (process.platform === 'win32') {
+    // Windows console / PowerShell stdin expects \r\n (CRLF)
+    return data.replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/\n/g, '\r\n');
+  }
+  // Linux / macOS shells expect \n (LF)
+  return data.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+}
 
 export interface HostTerminalSession {
   terminalId: string;
@@ -41,13 +103,11 @@ export class HostTerminalService implements vscode.Disposable {
     const writeEmitter = new vscode.EventEmitter<string>();
     const closeEmitter = new vscode.EventEmitter<number | void>();
 
-    const shell =
-      process.env.SHELL ||
-      (process.platform === 'win32' ? 'powershell.exe' : '/bin/bash');
-    const shellArgs = process.platform === 'win32' ? [] : ['-i'];
+    const { shell, args: shellArgs } = resolveHostShell();
+    const targetCwd = resolveHostCwd(this.workspaceRoot);
 
     const child = spawn(shell, shellArgs, {
-      cwd: this.workspaceRoot,
+      cwd: targetCwd,
       env: {
         ...process.env,
         TERM: 'xterm-256color',
@@ -139,8 +199,7 @@ export class HostTerminalService implements vscode.Disposable {
       },
       handleInput: (data: string) => {
         if (!child.stdin.destroyed) {
-          const normalized = data.replace(/\r(?!\n)/g, '\n');
-          child.stdin.write(normalized);
+          child.stdin.write(normalizeTerminalInput(data));
         }
       },
       setDimensions: (_dims: vscode.TerminalDimensions) => {
@@ -237,8 +296,7 @@ export class HostTerminalService implements vscode.Disposable {
           return;
         }
         if (!term.childProcess.stdin.destroyed) {
-          const normalized = inputMsg.data.replace(/\r(?!\n)/g, '\n');
-          term.childProcess.stdin.write(normalized);
+          term.childProcess.stdin.write(normalizeTerminalInput(inputMsg.data));
         }
       }
       return;

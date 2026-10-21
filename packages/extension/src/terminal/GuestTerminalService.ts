@@ -36,7 +36,12 @@ export class GuestTerminalService implements vscode.Disposable {
     this.isReadOnly = readOnly;
   }
 
-  public async openSharedTerminal(name = 'CoLive Shared Terminal'): Promise<GuestTerminalInstance> {
+  public async createSharedPseudoterminal(name = 'CoLive Shared Terminal'): Promise<{
+    pty: vscode.Pseudoterminal;
+    terminalId: string;
+    writeEmitter: vscode.EventEmitter<string>;
+    closeEmitter: vscode.EventEmitter<number | void>;
+  }> {
     const reqId = `term_req_${crypto.randomBytes(6).toString('hex')}`;
     const openReq: TerminalOpenReq = {
       v: PROTOCOL_VERSION,
@@ -68,12 +73,6 @@ export class GuestTerminalService implements vscode.Disposable {
     this.connectionManager.send(openReq);
     const res = await responsePromise;
     const terminalId = res.terminalId;
-
-    if (this.terminals.has(terminalId)) {
-      const existing = this.terminals.get(terminalId)!;
-      existing.terminal.show();
-      return existing;
-    }
 
     const writeEmitter = new vscode.EventEmitter<string>();
     const closeEmitter = new vscode.EventEmitter<number | void>();
@@ -115,9 +114,33 @@ export class GuestTerminalService implements vscode.Disposable {
       },
     };
 
+    return { pty, terminalId, writeEmitter, closeEmitter };
+  }
+
+  public async openSharedTerminal(name = 'CoLive Shared Terminal'): Promise<GuestTerminalInstance> {
+    if (this.terminals.size > 0) {
+      const first = this.terminals.values().next().value;
+      if (first && first.terminal) {
+        first.terminal.show();
+        return first;
+      }
+    }
+
+    const { pty, terminalId, writeEmitter, closeEmitter } = await this.createSharedPseudoterminal(name);
+
+    if (this.terminals.has(terminalId)) {
+      const existing = this.terminals.get(terminalId)!;
+      if (existing.terminal) {
+        existing.terminal.show();
+        return existing;
+      }
+    }
+
     const terminal = vscode.window.createTerminal({
-      name: `CoLive Guest: ${name}`,
+      name: `CoLive: Host Terminal (${name})`,
       pty,
+      isTransient: true,
+      iconPath: new vscode.ThemeIcon('broadcast'),
     });
     terminal.show();
 

@@ -372,6 +372,7 @@ export class RelayServer {
         this.sendJson(client, {
           v: PROTOCOL_VERSION,
           type: 'server.joinRejected',
+          id: msg.id,
           reason: 'Session not found or expired',
         });
         return;
@@ -426,6 +427,7 @@ export class RelayServer {
         this.sendJson(client, {
           v: PROTOCOL_VERSION,
           type: 'server.joinRejected',
+          id: msg.id,
           reason: 'Invite secret required',
         });
         return;
@@ -440,6 +442,7 @@ export class RelayServer {
         this.sendJson(client, {
           v: PROTOCOL_VERSION,
           type: 'server.joinRejected',
+          id: msg.id,
           reason: 'Invalid invite secret',
         });
         return;
@@ -450,6 +453,7 @@ export class RelayServer {
         this.sendJson(client, {
           v: PROTOCOL_VERSION,
           type: 'server.joinRejected',
+          id: msg.id,
           reason: 'Session is full',
         });
         return;
@@ -460,6 +464,7 @@ export class RelayServer {
         this.sendJson(client, {
           v: PROTOCOL_VERSION,
           type: 'server.joinRejected',
+          id: msg.id,
           reason: 'Too many pending join requests. Try again shortly.',
         });
         return;
@@ -470,6 +475,7 @@ export class RelayServer {
         this.sendJson(client, {
           v: PROTOCOL_VERSION,
           type: 'server.joinRejected',
+          id: msg.id,
           reason: 'Host is currently disconnected',
         });
         return;
@@ -480,6 +486,7 @@ export class RelayServer {
         this.sendJson(client, {
           v: PROTOCOL_VERSION,
           type: 'server.joinRejected',
+          id: msg.id,
           reason: 'Host is offline',
         });
         return;

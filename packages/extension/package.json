@@ -198,6 +198,12 @@
         "icon": "$(terminal)"
       },
       {
+        "command": "colive.openSharedTerminal",
+        "title": "CoLive: Access Host Terminal",
+        "category": "CoLive",
+        "icon": "$(terminal)"
+      },
+      {
         "command": "colive.toggleTerminalWrite",
         "title": "CoLive: Toggle Terminal Guest Permissions",
         "category": "CoLive",
@@ -228,7 +234,14 @@
       {
         "command": "colive.shareTerminal",
         "key": "ctrl+alt+l t",
-        "mac": "cmd+alt+l t"
+        "mac": "cmd+alt+l t",
+        "when": "colive.inSession && colive.isHost"
+      },
+      {
+        "command": "colive.openSharedTerminal",
+        "key": "ctrl+alt+l t",
+        "mac": "cmd+alt+l t",
+        "when": "colive.inSession && colive.isGuest"
       },
       {
         "command": "colive.createComment",
@@ -258,6 +271,11 @@
         {
           "command": "colive.shareTerminal",
           "when": "view == colive.participants && colive.inSession && colive.isHost",
+          "group": "navigation@2"
+        },
+        {
+          "command": "colive.openSharedTerminal",
+          "when": "view == colive.participants && colive.inSession && colive.isGuest",
           "group": "navigation@2"
         },
         {
@@ -447,6 +465,14 @@
           "description": "Enable End-to-End Encryption for all session content."
         }
       }
+    },
+    "terminal": {
+      "profiles": [
+        {
+          "id": "colive.hostTerminal",
+          "title": "CoLive: Host Terminal"
+        }
+      ]
     }
   },
   "scripts": {
