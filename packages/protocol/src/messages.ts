@@ -358,12 +358,34 @@ export type CommentOp = z.infer<typeof CommentOpSchema>;
 // 6. Chat
 export const ChatMessageSchema = BaseMessageSchema.extend({
   type: z.literal('chat.message'),
+  id: z.string().optional(),
+  messageId: z.string().optional(),
   fromId: z.string(),
   fromName: z.string(),
   text: z.string().max(MAX_CHAT_TEXT_LENGTH),
   ts: z.number(),
 });
 export type ChatMessage = z.infer<typeof ChatMessageSchema>;
+
+export const ChatSyncReqSchema = BaseMessageSchema.extend({
+  type: z.literal('chat.sync.req'),
+  since: z.number().optional(),
+  lastMessageId: z.string().optional(),
+  fromId: z.string().optional(),
+});
+export type ChatSyncReq = z.infer<typeof ChatSyncReqSchema>;
+
+export const ChatSyncResSchema = BaseMessageSchema.extend({
+  type: z.literal('chat.sync.res'),
+  messages: z.array(ChatMessageSchema),
+});
+export type ChatSyncRes = z.infer<typeof ChatSyncResSchema>;
+
+export const ChatClearSchema = BaseMessageSchema.extend({
+  type: z.literal('chat.clear'),
+  fromId: z.string().optional(),
+});
+export type ChatClear = z.infer<typeof ChatClearSchema>;
 
 // 7. Diagnostics
 export const DiagnosticsUpdateSchema = BaseMessageSchema.extend({
@@ -462,6 +484,9 @@ export const ColiveMessageSchema = z.discriminatedUnion('type', [
   DocSavedSchema,
   CommentOpSchema,
   ChatMessageSchema,
+  ChatSyncReqSchema,
+  ChatSyncResSchema,
+  ChatClearSchema,
   DiagnosticsUpdateSchema,
   TerminalOpenReqSchema,
   TerminalOpenResSchema,

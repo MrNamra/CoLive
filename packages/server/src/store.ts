@@ -1,4 +1,4 @@
-import { ParticipantInfo } from '@colive/protocol';
+import { ParticipantInfo, ChatMessage } from '@colive/protocol';
 
 export interface PendingJoin {
   requestId: string;
@@ -25,6 +25,7 @@ export interface SessionData {
   pendingJoins: Map<string, PendingJoin>; // requestId -> PendingJoin
   docSubscriptions: Map<string, Set<string>>; // docId -> Set<participantId>
   assignedColors: Set<string>;
+  chatHistory?: ChatMessage[];
 }
 
 export interface SessionStore {

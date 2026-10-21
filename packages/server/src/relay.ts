@@ -4,6 +4,9 @@ import { WebSocket, RawData } from 'ws';
 import pino from 'pino';
 import {
   BINARY_FRAME_KINDS,
+  ChatMessage,
+  ChatSyncReq,
+  ChatSyncRes,
   ColiveMessage,
   decodeBinaryFrame,
   MAX_BINARY_FRAME_BYTES,
@@ -55,8 +58,8 @@ export class RelayServer {
     this.config = config;
     this.store = store || new InMemorySessionStore();
     this.metrics = new ServerMetrics();
-    this.sessionCreationLimiter = new IpRateLimiter(5, 60_000); // 5 per min
-    this.failedJoinLimiter = new IpRateLimiter(10, 60_000); // 10 per min
+    this.sessionCreationLimiter = new IpRateLimiter(30, 60_000); // 30 per min
+    this.failedJoinLimiter = new IpRateLimiter(20, 60_000); // 20 per min
   }
 
   public getMetrics(): ServerMetrics {
@@ -671,6 +674,80 @@ export class RelayServer {
       return;
     }
 
+    // Handle Chat Messages, Catch-up Sync, and Clear
+    if (msg.type === 'chat.message') {
+      const chatMsg = msg as ChatMessage;
+      if (!chatMsg.id) {
+        chatMsg.id = `chat_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
+      }
+      chatMsg.messageId = chatMsg.id;
+
+      if (!session.chatHistory) {
+        session.chatHistory = [];
+      }
+      if (!session.chatHistory.some((m) => (m.id || m.messageId) === chatMsg.id)) {
+        session.chatHistory.push(chatMsg);
+        if (session.chatHistory.length > 200) {
+          session.chatHistory.shift();
+        }
+      }
+      this.broadcastToSession(session, chatMsg);
+      return;
+    }
+
+    if (msg.type === 'chat.clear') {
+      session.chatHistory = [];
+      this.broadcastToSession(session, msg);
+      return;
+    }
+
+    if (msg.type === 'chat.sync.req') {
+      const req = msg as ChatSyncReq;
+      const history = session.chatHistory || [];
+      let missed: ChatMessage[] = [];
+
+      if (req.lastMessageId) {
+        const idx = history.findIndex((m) => (m.id || m.messageId) === req.lastMessageId);
+        if (idx !== -1) {
+          missed = history.slice(idx + 1);
+        } else if (req.since) {
+          missed = history.filter((m) => m.ts >= req.since!);
+        } else {
+          missed = history;
+        }
+      } else if (req.since) {
+        missed = history.filter((m) => m.ts >= req.since!);
+      } else {
+        missed = history;
+      }
+
+      const res: ChatSyncRes = {
+        v: PROTOCOL_VERSION,
+        type: 'chat.sync.res',
+        id: req.id,
+        messages: missed,
+      };
+      this.sendJson(client, res);
+
+      // Also forward sync request to other connected participants in session
+      // so if any client sent messages during retry period that didn't reach server buffer,
+      // participants can also respond
+      for (const [, cId] of session.participantToClient.entries()) {
+        if (cId !== client.id) {
+          const peerClient = this.clients.get(cId);
+          if (peerClient && peerClient.authenticated && peerClient.ws.readyState === WebSocket.OPEN) {
+            this.sendJson(peerClient, req);
+          }
+        }
+      }
+      return;
+    }
+
+    if (msg.type === 'chat.sync.res') {
+      this.broadcastToSession(session, msg);
+      return;
+    }
+
     const participant = client.participantId ? session.participants.get(client.participantId) : undefined;
     const isReadOnly = participant?.permission === 'readOnly';
 
@@ -695,10 +772,11 @@ export class RelayServer {
 
     // Workspace & Doc RPC routing: Guest -> Host, Host -> Guest
     if (
-      msg.type.startsWith('fs.') ||
-      msg.type.endsWith('.req') ||
-      msg.type.endsWith('.res') ||
-      (msg.type === 'error' && msg.id)
+      !msg.type.startsWith('chat.') &&
+      (msg.type.startsWith('fs.') ||
+        msg.type.endsWith('.req') ||
+        msg.type.endsWith('.res') ||
+        (msg.type === 'error' && msg.id))
     ) {
       if (client.role === 'host') {
         // Response from Host -> Route to specific guest by request id
@@ -742,7 +820,6 @@ export class RelayServer {
 
     // Broadcast messages to entire session
     if (
-      msg.type === 'chat.message' ||
       msg.type === 'fs.watchEvent' ||
       msg.type === 'doc.saved' ||
       msg.type === 'diagnostics.update' ||

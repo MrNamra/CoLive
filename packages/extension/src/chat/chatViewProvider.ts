@@ -1,5 +1,12 @@
 import * as vscode from 'vscode';
-import { ChatMessage, PROTOCOL_VERSION } from '@colive/protocol';
+import crypto from 'node:crypto';
+import {
+  ChatMessage,
+  ChatSyncReq,
+  ChatSyncRes,
+  ChatClear,
+  PROTOCOL_VERSION,
+} from '@colive/protocol';
 import { ConnectionManager } from '../connection.js';
 
 export interface ChatMessageItem {
@@ -75,6 +82,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
   private view?: vscode.WebviewView;
   private connection: ConnectionManager | null = null;
   private sessionDisposable: vscode.Disposable | null = null;
+  private sessionDisposables: vscode.Disposable[] = [];
+  private disconnectedAt: number | null = null;
   private currentUserId = '';
   private currentUserName = '';
   private history: ChatMessageItem[] = [];
@@ -95,46 +104,79 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
       this.sessionDisposable.dispose();
       this.sessionDisposable = null;
     }
+    for (const d of this.sessionDisposables) {
+      d.dispose();
+    }
+    this.sessionDisposables = [];
 
+    const isResuming = this.currentUserId === userId && this.currentUserName === userName && this.history.length > 0;
     this.connection = connection;
     this.currentUserId = userId;
     this.currentUserName = userName;
-    this.history = [];
-    this.unreadCount = 0;
-    this.updateBadge();
+
+    if (!isResuming) {
+      this.history = [];
+      this.unreadCount = 0;
+      this.updateBadge();
+    }
 
     if (this.connection) {
+      const messageHandler = (msg: any) => {
+        if (!msg || typeof msg !== 'object') return;
+        if (msg.type === 'chat.message') {
+          this.handleIncomingChatMessage(msg as ChatMessage);
+        } else if (msg.type === 'chat.sync.res') {
+          this.handleChatSyncResponse(msg as ChatSyncRes);
+        } else if (msg.type === 'chat.sync.req') {
+          this.handleChatSyncRequest(msg as ChatSyncReq);
+        } else if (msg.type === 'chat.clear') {
+          this.clearChatLocally(false);
+        }
+      };
+
       if (typeof (this.connection as any).onMessage === 'function') {
-        this.sessionDisposable = this.connection.onMessage((msg) => {
-          if (msg.type === 'chat.message') {
-            this.handleIncomingChatMessage(msg as ChatMessage);
-          }
-        });
+        this.sessionDisposables.push(this.connection.onMessage(messageHandler));
       } else if (typeof (this.connection as any).on === 'function') {
-        const handler = (msg: any) => {
-          if (msg && msg.type === 'chat.message') {
-            this.handleIncomingChatMessage(msg as ChatMessage);
-          }
-        };
-        this.connection.on('message', handler);
-        this.sessionDisposable = {
-          dispose: () => this.connection?.off('message', handler),
-        };
+        this.connection.on('message', messageHandler);
+        this.sessionDisposables.push({
+          dispose: () => this.connection?.off('message', messageHandler),
+        });
+      }
+
+      if (typeof (this.connection as any).on === 'function') {
+        this.sessionDisposables.push(
+          this.connection.on('stateChange', (state) => {
+            if (state === 'reconnecting') {
+              if (!this.disconnectedAt) {
+                this.disconnectedAt = Date.now();
+              }
+            } else if (state === 'connected' && this.disconnectedAt) {
+              this.syncMissedMessages();
+            }
+          }),
+        );
+        this.sessionDisposables.push(
+          this.connection.on('reconnected', () => {
+            this.syncMissedMessages();
+          }),
+        );
       }
 
       this.postToWebview({
         type: 'setHistory',
-        messages: [],
+        messages: isResuming ? this.history : [],
       });
       this.postToWebview({
         type: 'setSessionState',
         inSession: true,
         userName: this.currentUserName,
       });
-      this.postToWebview({
-        type: 'addSystemMessage',
-        text: `Connected as ${userName || userId}. Start chatting below!`,
-      });
+      if (!isResuming) {
+        this.postToWebview({
+          type: 'addSystemMessage',
+          text: `Connected as ${userName || userId}. Start chatting below!`,
+        });
+      }
     } else {
       this.postToWebview({
         type: 'setSessionState',
@@ -212,11 +254,19 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
     });
   }
 
-  public clearChatLocally(): void {
+  public clearChatLocally(broadcast = true): void {
     this.history = [];
     this.unreadCount = 0;
     this.updateBadge();
     this.postToWebview({ type: 'setHistory', messages: [] });
+    if (broadcast && this.connection) {
+      const clearMsg: ChatClear = {
+        v: PROTOCOL_VERSION,
+        type: 'chat.clear',
+        fromId: this.currentUserId,
+      };
+      this.connection.send(clearMsg);
+    }
   }
 
   public deleteMessageLocally(id: string): void {
@@ -262,23 +312,28 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
       return;
     }
 
+    const msgId = `chat_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
+    const now = Date.now();
+
     const msg: ChatMessage = {
       v: PROTOCOL_VERSION,
       type: 'chat.message',
+      id: msgId,
+      messageId: msgId,
       fromId: this.currentUserId,
       fromName: this.currentUserName || 'You',
       text: trimmed,
-      ts: Date.now(),
+      ts: now,
     };
 
     this.connection.send(msg);
 
     const item: ChatMessageItem = {
-      id: `chat_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      id: msgId,
       fromId: this.currentUserId,
       fromName: this.currentUserName || 'You',
       text: trimmed,
-      ts: Date.now(),
+      ts: now,
       isSelf: true,
     };
     this.history.push(item);
@@ -363,21 +418,30 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
   }
 
   public handleIncomingChatMessage(msg: ChatMessage): void {
-    if (msg.fromId === this.currentUserId) return; // Skip own echoed messages
+    const msgId = msg.id || msg.messageId || `chat_${msg.ts}_${msg.fromId}`;
 
+    // Deduplication check: match with existing messages by unique ID
+    const alreadyPresent = this.history.some((m) => m.id === msgId);
+    if (alreadyPresent) {
+      // Message is already present - do not show multiple times!
+      return;
+    }
+
+    const isSelf = msg.fromId === this.currentUserId;
     const item: ChatMessageItem = {
-      id: `chat_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      id: msgId,
       fromId: msg.fromId,
       fromName: msg.fromName,
       text: msg.text,
       ts: msg.ts,
-      isSelf: false,
+      isSelf,
     };
 
     this.history.push(item);
+    this.history.sort((a, b) => a.ts - b.ts);
     this.postToWebview({ type: 'addMessage', message: item });
 
-    if (!this.view?.visible) {
+    if (!isSelf && !this.view?.visible) {
       this.unreadCount++;
       this.updateBadge();
 
@@ -390,6 +454,57 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
             vscode.commands.executeCommand('colive.chatView.focus');
           }
         });
+    }
+  }
+
+  public syncMissedMessages(): void {
+    if (!this.connection) return;
+    const retryPeriodStart = this.disconnectedAt || (Date.now() - 30000);
+    const lastItem = this.history[this.history.length - 1];
+    // Check during the retry period: since retryPeriodStart - 2000ms overlap
+    const since = Math.max(0, retryPeriodStart - 2000);
+
+    const syncReq: ChatSyncReq = {
+      v: PROTOCOL_VERSION,
+      type: 'chat.sync.req',
+      id: `sync_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`,
+      since,
+      lastMessageId: lastItem?.id,
+      fromId: this.currentUserId,
+    };
+    this.connection.send(syncReq);
+    this.disconnectedAt = null;
+  }
+
+  public handleChatSyncResponse(res: ChatSyncRes): void {
+    if (Array.isArray(res.messages)) {
+      for (const msg of res.messages) {
+        this.handleIncomingChatMessage(msg);
+      }
+    }
+  }
+
+  public handleChatSyncRequest(req: ChatSyncReq): void {
+    if (req.fromId && req.fromId === this.currentUserId) return;
+    const since = req.since || 0;
+    const missed = this.history.filter((m) => m.ts >= since);
+    if (missed.length > 0 && this.connection) {
+      const syncRes: ChatSyncRes = {
+        v: PROTOCOL_VERSION,
+        type: 'chat.sync.res',
+        id: req.id,
+        messages: missed.map((m) => ({
+          v: PROTOCOL_VERSION,
+          type: 'chat.message',
+          id: m.id,
+          messageId: m.id,
+          fromId: m.fromId,
+          fromName: m.fromName,
+          text: m.text,
+          ts: m.ts,
+        })),
+      };
+      this.connection.send(syncRes);
     }
   }
 
@@ -641,9 +756,15 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
     }
 
     function appendMessage(item) {
+      if (!item || !item.id) return;
+      if (document.getElementById(item.id)) {
+        // Message with this id already present in DOM - do NOT render multiple times!
+        return;
+      }
       hideEmptyState();
       const el = document.createElement('div');
       el.id = item.id;
+      el.setAttribute('data-id', item.id);
       el.className = 'chat-msg ' + (item.isSelf ? 'self' : 'remote');
 
       const header = document.createElement('div');
@@ -733,8 +854,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
       } else if (msg.type === 'setHistory') {
         container.innerHTML = '';
         if (msg.messages && msg.messages.length > 0) {
+          const seen = new Set();
           for (const item of msg.messages) {
-            appendMessage(item);
+            if (item && item.id && !seen.has(item.id)) {
+              seen.add(item.id);
+              appendMessage(item);
+            }
           }
         } else {
           showEmptyState();
@@ -766,6 +891,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
       this.sessionDisposable.dispose();
       this.sessionDisposable = null;
     }
+    for (const d of this.sessionDisposables) {
+      d.dispose();
+    }
+    this.sessionDisposables = [];
     for (const d of this.disposables) {
       d.dispose();
     }

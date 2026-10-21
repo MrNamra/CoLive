@@ -441,4 +441,123 @@ describe('Relay Server Integration Test Suite', () => {
 
     hostWs.close();
   });
+
+  it('Relay server preserves chat messages with unique ids, answers chat.sync.req for reconnected guests, and handles chat.clear', async () => {
+    const hostWs = await connectClient('host');
+
+    // 1. Host creates session
+    const createdPromise = waitForJson<any>(hostWs, 'server.sessionCreated');
+    hostWs.send(
+      JSON.stringify({
+        v: PROTOCOL_VERSION,
+        type: 'host.createSession',
+        displayName: 'Host Alice',
+      }),
+    );
+    const created = await createdPromise;
+
+    // 2. Guest joins
+    let guestWs = await connectClient('guest');
+    const joinReqPromise = waitForJson<any>(hostWs, 'server.joinRequest');
+    guestWs.send(
+      JSON.stringify({
+        v: PROTOCOL_VERSION,
+        type: 'guest.join',
+        sessionId: created.sessionId,
+        inviteSecret: created.inviteSecret,
+        displayName: 'Guest Bob',
+      }),
+    );
+    const joinReq = await joinReqPromise;
+
+    const joinAcceptedPromise = waitForJson<any>(guestWs, 'server.joinAccepted');
+    hostWs.send(
+      JSON.stringify({
+        v: PROTOCOL_VERSION,
+        type: 'host.joinDecision',
+        requestId: joinReq.requestId,
+        accept: true,
+        permission: 'readWrite',
+      }),
+    );
+    const joinAccepted = await joinAcceptedPromise;
+
+    // 3. Guest drops connection for 1 second (simulating network flap)
+    guestWs.close();
+
+    // 4. During this 1-second retry window, Host sends a chat message
+    const msgTs = Date.now();
+    hostWs.send(
+      JSON.stringify({
+        v: PROTOCOL_VERSION,
+        type: 'chat.message',
+        id: 'msg_flap_test_1',
+        fromId: 'host',
+        fromName: 'Host Alice',
+        text: 'Hello while you were disconnected!',
+        ts: msgTs,
+      }),
+    );
+
+    // Wait a brief moment to let server buffer message
+    await new Promise((r) => setTimeout(r, 100));
+
+    // 5. Guest reconnects with guestToken
+    guestWs = await connectClient('guest');
+    const guestRejoinPromise = waitForJson(guestWs, 'server.joinAccepted');
+    guestWs.send(
+      JSON.stringify({
+        v: PROTOCOL_VERSION,
+        type: 'guest.join',
+        sessionId: created.sessionId,
+        inviteSecret: created.inviteSecret,
+        guestToken: joinAccepted.guestToken,
+        displayName: 'Guest Bob',
+      }),
+    );
+    await guestRejoinPromise;
+
+    // 6. Guest requests missed chat messages during retry period
+    const syncResPromise = waitForJson<any>(guestWs, 'chat.sync.res');
+    guestWs.send(
+      JSON.stringify({
+        v: PROTOCOL_VERSION,
+        type: 'chat.sync.req',
+        id: 'req_sync_1',
+        since: msgTs - 1000,
+      }),
+    );
+
+    const syncRes = await syncResPromise;
+    expect(syncRes.messages).toBeDefined();
+    expect(syncRes.messages.length).toBe(1);
+    expect(syncRes.messages[0].id).toBe('msg_flap_test_1');
+    expect(syncRes.messages[0].text).toBe('Hello while you were disconnected!');
+
+    // 7. Clear chat: wipes server chat history so old messages are not recovered
+    const clearPromise = waitForJson<any>(guestWs, 'chat.clear');
+    hostWs.send(
+      JSON.stringify({
+        v: PROTOCOL_VERSION,
+        type: 'chat.clear',
+      }),
+    );
+    await clearPromise;
+
+    // Sync again: should return empty
+    const syncResAfterClearPromise = waitForJson<any>(guestWs, 'chat.sync.res');
+    guestWs.send(
+      JSON.stringify({
+        v: PROTOCOL_VERSION,
+        type: 'chat.sync.req',
+        id: 'req_sync_2',
+        since: 0,
+      }),
+    );
+    const syncResAfterClear = await syncResAfterClearPromise;
+    expect(syncResAfterClear.messages.length).toBe(0);
+
+    hostWs.close();
+    guestWs.close();
+  });
 });

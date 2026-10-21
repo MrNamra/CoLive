@@ -427,6 +427,126 @@ describe('Milestone 8: Comments, Chat, Diagnostics', () => {
       expect(showInfoSpy).not.toHaveBeenCalled();
       provider.dispose();
     });
+
+    it('deduplicates messages matching an existing unique id so they never appear multiple times', () => {
+      const provider = new ChatViewProvider(vscode.Uri.file('/extension'));
+      provider.setSession({ onMessage: vi.fn().mockReturnValue({ dispose: vi.fn() }) } as any, 'user_self', 'Self');
+
+      const uniqueId = 'msg_unique_12345';
+      const msg = {
+        v: 1,
+        type: 'chat.message' as const,
+        id: uniqueId,
+        messageId: uniqueId,
+        fromId: 'user_alice',
+        fromName: 'Alice',
+        text: 'Hello, this is unique!',
+        ts: Date.now(),
+      };
+
+      // First delivery: should be added
+      provider.handleIncomingChatMessage(msg);
+      expect((provider as any).history.length).toBe(1);
+      expect((provider as any).history[0].id).toBe(uniqueId);
+
+      // Second delivery with identical ID (e.g. from sync or retry): matched, considered already present!
+      provider.handleIncomingChatMessage(msg);
+      expect((provider as any).history.length).toBe(1); // Still 1, NOT duplicated
+
+      // Different ID: should be added
+      provider.handleIncomingChatMessage({
+        ...msg,
+        id: 'msg_unique_67890',
+        messageId: 'msg_unique_67890',
+        text: 'Second message',
+      });
+      expect((provider as any).history.length).toBe(2);
+
+      provider.dispose();
+    });
+
+    it('syncs missed messages sent during retry period upon reconnection and handles chat.clear', () => {
+      const provider = new ChatViewProvider(vscode.Uri.file('/extension'));
+      const sentMessages: any[] = [];
+      const listeners: Record<string, Function[]> = {};
+
+      const mockConn = {
+        send: vi.fn((m) => sentMessages.push(m)),
+        onMessage: vi.fn((fn) => {
+          (listeners['message'] ||= []).push(fn);
+          return { dispose: () => {} };
+        }),
+        on: vi.fn((evt, fn) => {
+          (listeners[evt] ||= []).push(fn);
+          return { dispose: () => {} };
+        }),
+      } as any;
+
+      provider.setSession(mockConn, 'user_guest', 'Guest');
+
+      // Add one initial message
+      provider.handleIncomingChatMessage({
+        v: 1,
+        type: 'chat.message',
+        id: 'msg_initial',
+        fromId: 'user_host',
+        fromName: 'Host',
+        text: 'Welcome',
+        ts: Date.now() - 5000,
+      });
+      expect((provider as any).history.length).toBe(1);
+
+      // Simulate connection dropping into reconnecting state for 1 second
+      for (const fn of listeners['stateChange'] || []) {
+        fn('reconnecting');
+      }
+
+      // Simulate connection reconnected
+      for (const fn of listeners['reconnected'] || []) {
+        fn();
+      }
+
+      // Client should have sent chat.sync.req for missed messages during retry period
+      const syncReq = sentMessages.find((m) => m.type === 'chat.sync.req');
+      expect(syncReq).toBeDefined();
+      expect(syncReq.lastMessageId).toBe('msg_initial');
+
+      // Server responds with missed message sent during that 1 second
+      const missedMsg = {
+        v: 1,
+        type: 'chat.message' as const,
+        id: 'msg_sent_during_retry',
+        fromId: 'user_host',
+        fromName: 'Host',
+        text: 'Message sent while guest was reconnecting',
+        ts: Date.now(),
+      };
+
+      for (const fn of listeners['message'] || []) {
+        fn({
+          v: 1,
+          type: 'chat.sync.res',
+          id: syncReq.id,
+          messages: [missedMsg],
+        });
+      }
+
+      // Missed message should now be in guest history
+      expect((provider as any).history.length).toBe(2);
+      expect((provider as any).history[1].id).toBe('msg_sent_during_retry');
+      expect((provider as any).history[1].text).toBe('Message sent while guest was reconnecting');
+
+      // Simulate chat.clear: removes chat from history across participants
+      for (const fn of listeners['message'] || []) {
+        fn({
+          v: 1,
+          type: 'chat.clear',
+        });
+      }
+      expect((provider as any).history.length).toBe(0);
+
+      provider.dispose();
+    });
   });
 
   describe('Diagnostics Conversion and Mapping', () => {
