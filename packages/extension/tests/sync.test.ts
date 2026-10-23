@@ -284,16 +284,21 @@ describe('Milestone 6: Real-time co-editing with Yjs', () => {
       // Schedule debounced save
       persistence.scheduleSave('test-crlf-bom.txt', 'doc123', ydoc);
 
-      // Wait for debounce to fire
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      // Wait for debounce and disk write to flush
+      let savedStr = '';
+      let savedBuffer = Buffer.alloc(0);
+      for (let i = 0; i < 20; i++) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        savedBuffer = await fs.promises.readFile(filePath);
+        savedStr = savedBuffer.toString('utf8');
+        if (savedStr.includes('line3 modified')) break;
+      }
 
-      const savedBuffer = await fs.promises.readFile(filePath);
       // Check BOM
       expect(savedBuffer[0]).toBe(0xef);
       expect(savedBuffer[1]).toBe(0xbb);
       expect(savedBuffer[2]).toBe(0xbf);
 
-      const savedStr = savedBuffer.toString('utf8');
       expect(savedStr).toContain('\r\n');
       expect(savedStr).toContain('line3 modified');
 
