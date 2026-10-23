@@ -2,7 +2,7 @@
   "name": "colive",
   "displayName": "CoLive - Real-time Collaboration",
   "description": "Real-time collaborative editing, cursors, comments, and follow mode",
-  "version": "0.2.0",
+  "version": "1.0.0",
   "type": "module",
   "publisher": "colive-team",
   "license": "MIT",

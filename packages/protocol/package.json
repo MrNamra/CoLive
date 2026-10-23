@@ -1,6 +1,6 @@
 {
   "name": "@colive/protocol",
-  "version": "0.2.0",
+  "version": "1.0.0",
   "type": "module",
   "description": "Shared message schemas, binary framing, and protocol types for CoLive",
   "main": "./dist/index.js",
