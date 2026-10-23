@@ -29,9 +29,8 @@
     "vscode": "^1.90.0"
   },
   "categories": [
-    "Collaboration",
-    "Programming Languages",
-    "Other"
+    "Other",
+    "Programming Languages"
   ],
   "main": "./dist/extension.cjs",
   "activationEvents": [
