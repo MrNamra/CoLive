@@ -3,9 +3,12 @@ import * as Y from 'yjs';
 import {
   CommentData,
   CommentOp,
+  CommentSyncReq,
+  CommentSyncRes,
   CommentThreadData,
   normalizeWorkspacePath,
   Permission,
+  PROTOCOL_VERSION,
   Role,
 } from '@colive/protocol';
 import { ConnectionManager } from '../connection.js';
@@ -92,25 +95,76 @@ export class CommentsManager implements vscode.Disposable {
       this._onDidChangeComments.fire(this.getAllThreads());
     });
 
-    // Listen for incoming comment.op messages
+    // Listen for incoming comment messages
     this.disposables.push(
       this.connection.onMessage((msg) => {
         if (msg.type === 'comment.op') {
-          this.handleCommentOpMessage(msg);
+          this.handleCommentOpMessage(msg as CommentOp);
+        } else if (msg.type === 'comment.sync.req') {
+          this.handleCommentSyncReq(msg as CommentSyncReq);
         }
       }),
     );
 
-    // Watch active/visible editor changes to render comments
+    // Watch active and visible editor changes to render comments
     this.disposables.push(
       vscode.window.onDidChangeActiveTextEditor(() => {
         this.syncCommentThreads();
       }),
     );
+    if (typeof vscode.window.onDidChangeVisibleTextEditors === 'function') {
+      this.disposables.push(
+        vscode.window.onDidChangeVisibleTextEditors(() => {
+          this.syncCommentThreads();
+        }),
+      );
+    }
+
+    // Request comments sync on startup and on reconnect for guest
+    if (this.role === 'guest') {
+      this.requestCommentsSync();
+      this.disposables.push(
+        this.connection.on('reconnected', () => {
+          this.requestCommentsSync();
+        }),
+      );
+    }
   }
 
   public setPermission(permission: Permission): void {
     this.permission = permission;
+  }
+
+  public getUserId(): string {
+    return this.userId;
+  }
+
+  public getUserName(): string {
+    return this.userName;
+  }
+
+  public getUserColor(): string {
+    return this.userColor;
+  }
+
+  public registerActiveThread(id: string, thread: vscode.CommentThread): void {
+    (thread as any).threadId = id;
+    this.activeThreads.set(id, thread);
+  }
+
+  public unregisterActiveThread(id: string): void {
+    this.activeThreads.delete(id);
+  }
+
+  public getActiveThread(id: string): vscode.CommentThread | undefined {
+    return this.activeThreads.get(id);
+  }
+
+  public expandThread(threadId: string): void {
+    const thread = this.activeThreads.get(threadId);
+    if (thread) {
+      thread.collapsibleState = vscode.CommentThreadCollapsibleState.Expanded;
+    }
   }
 
   public getAllThreads(): CommentThreadData[] {
@@ -130,8 +184,33 @@ export class CommentsManager implements vscode.Disposable {
   }
 
   public getThreadIdByVsThread(vsThread: vscode.CommentThread): string | undefined {
+    if ((vsThread as any)?.threadId && this.commentsMap.has((vsThread as any).threadId)) {
+      return (vsThread as any).threadId;
+    }
     for (const [id, t] of this.activeThreads.entries()) {
       if (t === vsThread) return id;
+    }
+    if (vsThread && vsThread.uri && vsThread.range) {
+      for (const [id, t] of this.activeThreads.entries()) {
+        if (
+          t.uri?.toString() === vsThread.uri.toString() &&
+          t.range &&
+          Math.abs(t.range.start.line - vsThread.range.start.line) <= 1
+        ) {
+          return id;
+        }
+      }
+      const normPath = this.normalizeDocumentPath({ uri: vsThread.uri } as any);
+      if (normPath) {
+        for (const threadData of this.commentsMap.values()) {
+          if (
+            threadData.path === normPath &&
+            Math.abs(threadData.range.startLine - vsThread.range.start.line) <= 1
+          ) {
+            return threadData.id;
+          }
+        }
+      }
     }
     return undefined;
   }
@@ -141,13 +220,56 @@ export class CommentsManager implements vscode.Disposable {
   }
 
   /**
-   * Dispatches a comment operation. Guests send to host; Host validates and applies to Y.Map.
+   * Request full comments synchronization from host.
+   */
+  public async requestCommentsSync(): Promise<void> {
+    try {
+      const res = await this.connection.request<CommentSyncRes>({
+        v: PROTOCOL_VERSION,
+        type: 'comment.sync.req',
+        id: `csync_${Math.random().toString(36).slice(2, 9)}`,
+      });
+      if (res && Array.isArray(res.threads)) {
+        this.commentsDoc.transact(() => {
+          for (const t of res.threads) {
+            this.commentsMap.set(t.id, t);
+          }
+        });
+        this.syncCommentThreads();
+        this._onDidChangeComments.fire(this.getAllThreads());
+      }
+    } catch (err) {
+      Logger.warn('Failed to sync comments with host', { err });
+    }
+  }
+
+  private handleCommentSyncReq(msg: CommentSyncReq): void {
+    if (this.role !== 'host') return;
+    const threads = this.getAllThreads();
+    this.connection.sendJson({
+      v: PROTOCOL_VERSION,
+      type: 'comment.sync.res',
+      id: msg.id,
+      threads,
+    });
+  }
+
+  /**
+   * Dispatches a comment operation.
+   * Host validates, applies locally, and broadcasts to guests.
+   * Guest applies locally (optimistic) and sends to host/session.
    */
   public async dispatchOp(op: CommentOp): Promise<void> {
+    const enrichedOp: CommentOp = {
+      ...op,
+      authorId: op.authorId || this.userId,
+      authorName: op.authorName || this.userName,
+    };
+
     if (this.role === 'host') {
-      const existing = this.commentsMap.get(op.threadId);
+      const existing = this.commentsMap.get(enrichedOp.threadId);
       const validation = validateCommentOp(
-        op,
+        enrichedOp,
         {
           id: this.userId,
           role: 'host',
@@ -162,32 +284,50 @@ export class CommentsManager implements vscode.Disposable {
         throw new Error(validation.error || 'Invalid comment operation');
       }
 
-      this.applyOpToYMap(op, this.userId, this.userName);
+      this.applyOpToYMap(enrichedOp, this.userId, this.userName);
+
+      // Broadcast validated op to all session participants
+      this.connection.sendJson(enrichedOp);
     } else {
-      // Guest sends to host
-      this.connection.send(op);
+      // Guest: apply locally immediately for responsive UI, then broadcast to host
+      this.applyOpToYMap(enrichedOp, this.userId, this.userName);
+      this.connection.sendJson(enrichedOp);
     }
   }
 
   private handleCommentOpMessage(op: CommentOp): void {
-    if (this.role !== 'host') return;
+    // If originated by this client, already applied locally
+    if (op.authorId && op.authorId === this.userId) return;
 
-    // Sender is guest; find their info from connection if needed or sender metadata
-    const existing = this.commentsMap.get(op.threadId);
-    const sender = {
-      id: 'guest',
-      role: 'guest' as const,
-      displayName: 'Guest',
-      permission: this.permission,
-    };
+    if (this.role === 'host') {
+      const existing = this.commentsMap.get(op.threadId);
+      const sender = {
+        id: op.authorId || 'guest',
+        role: 'guest' as const,
+        displayName: op.authorName || 'Guest',
+        permission: this.permission,
+      };
 
-    const validation = validateCommentOp(op, sender, this.allowReadOnlyComments, existing);
-    if (!validation.valid) {
-      Logger.warn('Rejected invalid comment.op from guest', { error: validation.error, op });
-      return;
+      const validation = validateCommentOp(op, sender, this.allowReadOnlyComments, existing);
+      if (!validation.valid) {
+        Logger.warn('Rejected invalid comment.op from guest', { error: validation.error, op });
+        return;
+      }
+
+      this.applyOpToYMap(op, sender.id, sender.displayName);
+
+      // Broadcast validated op to other session participants
+      this.connection.sendJson({
+        ...op,
+        authorId: sender.id,
+        authorName: sender.displayName,
+      });
+    } else {
+      // Guest receives comment.op from host or broadcast
+      const authorId = op.authorId || 'host';
+      const authorName = op.authorName || 'Host';
+      this.applyOpToYMap(op, authorId, authorName);
     }
-
-    this.applyOpToYMap(op, sender.id, sender.displayName);
   }
 
   public applyOpToYMap(op: CommentOp, authorId: string, authorName: string): void {
@@ -195,8 +335,14 @@ export class CommentsManager implements vscode.Disposable {
       switch (op.op) {
         case 'create': {
           if (!op.path || !op.range || !op.body) return;
+          const existing = this.commentsMap.get(op.threadId);
+          if (existing) {
+            this.checkMentions(op.body);
+            return;
+          }
+
           const newComment: CommentData = {
-            id: `cmt_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+            id: op.commentId || `cmt_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
             authorId,
             authorName,
             body: sanitizeCommentMarkdown(op.body),
@@ -224,8 +370,13 @@ export class CommentsManager implements vscode.Disposable {
           const thread = this.commentsMap.get(op.threadId);
           if (!thread || !op.body) return;
 
+          const commentId = op.commentId || `cmt_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+          if (thread.comments.some((c) => c.id === commentId)) {
+            return;
+          }
+
           const reply: CommentData = {
-            id: `cmt_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+            id: commentId,
             authorId,
             authorName,
             body: sanitizeCommentMarkdown(op.body),
@@ -260,7 +411,12 @@ export class CommentsManager implements vscode.Disposable {
 
         case 'delete': {
           const thread = this.commentsMap.get(op.threadId);
-          if (!thread || !op.commentId) return;
+          if (!thread) return;
+
+          if (!op.commentId) {
+            this.commentsMap.delete(op.threadId);
+            break;
+          }
 
           const remaining = thread.comments.filter((c) => c.id !== op.commentId);
           if (remaining.length === 0) {
@@ -301,61 +457,74 @@ export class CommentsManager implements vscode.Disposable {
   }
 
   /**
-   * Synchronizes comment threads with active/visible editors.
+   * Synchronizes comment threads with active and visible editors.
    */
   public syncCommentThreads(): void {
     if (this.isDisposed) return;
-    const activeEditor = vscode.window.activeTextEditor;
-    if (!activeEditor) return;
+    const editors = vscode.window.visibleTextEditors && vscode.window.visibleTextEditors.length > 0
+      ? vscode.window.visibleTextEditors
+      : (vscode.window.activeTextEditor ? [vscode.window.activeTextEditor] : []);
 
-    const currentPath = this.normalizeDocumentPath(activeEditor.document);
-    if (!currentPath) return;
+    if (editors.length === 0) return;
 
-    const docThreads = this.getAllThreads().filter((t) => t.path === currentPath);
-    const currentThreadIds = new Set<string>();
+    for (const editor of editors) {
+      const currentPath = this.normalizeDocumentPath(editor.document);
+      if (!currentPath) continue;
 
-    for (const threadData of docThreads) {
-      currentThreadIds.add(threadData.id);
-      const existingThread = this.activeThreads.get(threadData.id);
+      const docThreads = this.getAllThreads().filter((t) => t.path === currentPath);
 
-      // Resolve anchored position using RelativePosition if available
-      const resolvedRange = this.resolveAnchorRange(activeEditor.document, threadData);
+      for (const threadData of docThreads) {
+        const existingThread = this.activeThreads.get(threadData.id);
 
-      const vsComments: vscode.Comment[] = threadData.comments.map((c) => ({
-        author: {
-          name: c.authorName,
-          iconPath: vscode.Uri.parse(generateInitialsAvatarSvg(c.authorName, '#4A90E2')),
-        },
-        body: new vscode.MarkdownString(c.body, false),
-        mode: vscode.CommentMode.Preview,
-        contextValue: c.authorId === this.userId || this.role === 'host' ? 'canDelete' : undefined,
-      }));
+        // Resolve anchored position using RelativePosition if available
+        const resolvedRange = this.resolveAnchorRange(editor.document, threadData);
 
-      if (existingThread) {
-        existingThread.range = resolvedRange;
-        existingThread.comments = vsComments;
-        existingThread.contextValue = threadData.resolved ? 'resolved' : 'unresolved';
-        existingThread.collapsibleState = threadData.resolved
-          ? vscode.CommentThreadCollapsibleState.Collapsed
-          : vscode.CommentThreadCollapsibleState.Expanded;
-      } else {
-        const newThread = this.commentController.createCommentThread(
-          activeEditor.document.uri,
-          resolvedRange,
-          vsComments,
-        );
-        newThread.canReply = !threadData.resolved && (this.permission !== 'readOnly' || this.allowReadOnlyComments);
-        newThread.contextValue = threadData.resolved ? 'resolved' : 'unresolved';
-        newThread.collapsibleState = threadData.resolved
-          ? vscode.CommentThreadCollapsibleState.Collapsed
-          : vscode.CommentThreadCollapsibleState.Expanded;
-        this.activeThreads.set(threadData.id, newThread);
+        const vsComments: vscode.Comment[] = threadData.comments.map((c) => {
+          const vsC: vscode.Comment = {
+            author: {
+              name: c.authorName,
+              iconPath: vscode.Uri.parse(generateInitialsAvatarSvg(c.authorName, '#4A90E2')),
+            },
+            body: new vscode.MarkdownString(c.body, false),
+            mode: vscode.CommentMode.Preview,
+            contextValue: c.authorId === this.userId || this.role === 'host' ? 'canDelete' : undefined,
+          };
+          (vsC as any).commentId = c.id;
+          (vsC as any).threadId = threadData.id;
+          return vsC;
+        });
+
+        if (existingThread) {
+          (existingThread as any).threadId = threadData.id;
+          existingThread.range = resolvedRange;
+          existingThread.comments = vsComments;
+          existingThread.canReply = !threadData.resolved && (this.permission !== 'readOnly' || this.allowReadOnlyComments);
+          existingThread.contextValue = threadData.resolved ? 'resolved' : 'unresolved';
+          // When resolved, automatically collapse.
+          // When unresolved, preserve existing collapsibleState (so user's minimized state isn't reset).
+          if (threadData.resolved) {
+            existingThread.collapsibleState = vscode.CommentThreadCollapsibleState.Collapsed;
+          }
+        } else {
+          const newThread = this.commentController.createCommentThread(
+            editor.document.uri,
+            resolvedRange,
+            vsComments,
+          );
+          (newThread as any).threadId = threadData.id;
+          newThread.canReply = !threadData.resolved && (this.permission !== 'readOnly' || this.allowReadOnlyComments);
+          newThread.contextValue = threadData.resolved ? 'resolved' : 'unresolved';
+          newThread.collapsibleState = threadData.resolved
+            ? vscode.CommentThreadCollapsibleState.Collapsed
+            : vscode.CommentThreadCollapsibleState.Expanded;
+          this.activeThreads.set(threadData.id, newThread);
+        }
       }
     }
 
-    // Dispose threads that no longer exist or are in other documents
+    // Dispose only threads that no longer exist in commentsMap (i.e. deleted)
     for (const [id, thread] of this.activeThreads.entries()) {
-      if (!currentThreadIds.has(id)) {
+      if (!this.commentsMap.has(id)) {
         thread.dispose();
         this.activeThreads.delete(id);
       }
@@ -397,7 +566,7 @@ export class CommentsManager implements vscode.Disposable {
       const rel = fsPath.slice(this.workspaceRoot.length).replace(/^[/\\]+/, '');
       return normalizeWorkspacePath(rel);
     } else if (doc.uri.scheme === 'colive') {
-      let p = doc.uri.path.replace(/^\/+/, '');
+      let p = decodeURIComponent(doc.uri.path).replace(/^\/+/, '');
       const firstSlash = p.indexOf('/');
       if (firstSlash >= 0) p = p.slice(firstSlash + 1);
       return normalizeWorkspacePath(p);
@@ -420,6 +589,23 @@ export class CommentsManager implements vscode.Disposable {
         if (thread.id && thread.path && thread.comments) {
           this.commentsMap.set(thread.id, thread);
           count++;
+          if (this.role === 'host') {
+            for (const c of thread.comments) {
+              this.connection.sendJson({
+                v: PROTOCOL_VERSION,
+                type: 'comment.op',
+                op: 'create',
+                threadId: thread.id,
+                commentId: c.id,
+                path: thread.path,
+                range: thread.range,
+                body: c.body,
+                authorId: c.authorId,
+                authorName: c.authorName,
+                resolved: thread.resolved,
+              });
+            }
+          }
         }
       }
     });
@@ -435,6 +621,22 @@ export class CommentsManager implements vscode.Disposable {
       thread?.dispose();
     }
     this.activeThreads.clear();
+
+    try {
+      this.commentsDoc.transact(() => {
+        for (const k of Array.from(this.commentsMap.keys())) {
+          this.commentsMap.delete(k);
+        }
+      });
+    } catch {
+      // Ignore if doc is already closed
+    }
+
+    try {
+      this._onDidChangeComments.fire([]);
+    } catch {
+      // Ignore
+    }
 
     for (const d of this.disposables) {
       d?.dispose();

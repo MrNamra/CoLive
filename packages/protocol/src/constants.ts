@@ -9,6 +9,11 @@ export const PROTOCOL_VERSION = 1;
 export const MAX_FILE_BYTES = 5 * 1024 * 1024;
 
 /**
+ * Maximum binary/image asset size in bytes (10 MB).
+ */
+export const MAX_ASSET_BYTES = 10 * 1024 * 1024;
+
+/**
  * Maximum JSON message size in bytes (1 MB).
  */
 export const MAX_MESSAGE_BYTES = 1 * 1024 * 1024;

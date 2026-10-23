@@ -825,7 +825,9 @@ export class RelayServer {
       msg.type === 'diagnostics.update' ||
       msg.type === 'comment.op' ||
       msg.type === 'terminal.data' ||
-      msg.type === 'terminal.close'
+      msg.type === 'terminal.close' ||
+      msg.type === 'debug.state' ||
+      msg.type === 'debug.breakpoints'
     ) {
       this.broadcastToSession(session, msg);
       return;

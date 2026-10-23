@@ -2,10 +2,13 @@ import * as vscode from 'vscode';
 import {
   FsListReq,
   FsListRes,
+  FsReadChunkReq,
+  FsReadChunkRes,
   FsReadReq,
   FsReadRes,
   FsStatReq,
   FsStatRes,
+  isImageFile,
   PROTOCOL_VERSION,
 } from '@colive/protocol';
 import { ConnectionManager } from '../connection.js';
@@ -209,7 +212,12 @@ export class CoLiveFileSystemProvider implements vscode.FileSystemProvider, vsco
 
       let content: Uint8Array;
       if (res.isBinary) {
-        content = new TextEncoder().encode(Strings.binaryFilePlaceholder);
+        if (isImageFile(relPath)) {
+          // Binary image asset: decode real buffer so VS Code image previewer can render it
+          content = new Uint8Array(Buffer.from(res.contentBase64, 'base64'));
+        } else {
+          content = new TextEncoder().encode(Strings.binaryFilePlaceholder);
+        }
       } else {
         content = new Uint8Array(Buffer.from(res.contentBase64, 'base64'));
       }
@@ -219,6 +227,50 @@ export class CoLiveFileSystemProvider implements vscode.FileSystemProvider, vsco
     } catch (err: unknown) {
       throw this.mapError(err, uri);
     }
+  }
+
+  /**
+   * Reads a binary/image asset in chunks over the connection.
+   */
+  public async readChunked(relPath: string, onProgress?: (percent: number) => void): Promise<Uint8Array> {
+    let offset = 0;
+    const chunkSize = 256 * 1024; // 256 KB
+    const chunks: Uint8Array[] = [];
+    let totalSize = 0;
+
+    while (true) {
+      const req: FsReadChunkReq = {
+        v: PROTOCOL_VERSION,
+        type: 'fs.readChunk.req',
+        id: `chunk_${Math.random().toString(36).slice(2, 9)}`,
+        path: relPath,
+        offset,
+        length: chunkSize,
+      };
+
+      const res = await this.connection.request<FsReadChunkRes>(req);
+      totalSize = res.totalSize;
+      const chunkBytes = new Uint8Array(Buffer.from(res.dataBase64, 'base64'));
+      chunks.push(chunkBytes);
+      offset += res.bytesRead;
+
+      if (onProgress && totalSize > 0) {
+        onProgress(Math.min(100, Math.round((offset / totalSize) * 100)));
+      }
+
+      if (res.eof || res.bytesRead === 0) {
+        break;
+      }
+    }
+
+    const totalLen = chunks.reduce((acc, c) => acc + c.byteLength, 0);
+    const result = new Uint8Array(totalLen);
+    let cur = 0;
+    for (const c of chunks) {
+      result.set(c, cur);
+      cur += c.byteLength;
+    }
+    return result;
   }
 
   private addToCache(relPath: string, content: Uint8Array, mtime: number): void {

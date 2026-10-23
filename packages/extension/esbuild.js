@@ -52,6 +52,7 @@ const buildOptions = {
   target: 'node20',
   define: {
     'import.meta.url': '""',
+    'import.meta': '{}',
   },
   sourcemap: !isProduction,
   minify: isProduction,

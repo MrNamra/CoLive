@@ -16,27 +16,20 @@ This document outlines the architectural and capability trajectory for CoLive ac
 
 ---
 
-## Phase 2: Rich Development Capabilities (v0.2.0)
-
-### 1. Language Feature Proxying (LSP Mirroring)
-- **Problem**: Guests currently receive basic syntax highlighting, but full IntelliSense (hover info, autocomplete, go-to-definition, find references) requires language servers running on the host machine.
-- **Approach**:
-  - Implement a lightweight LSP proxy over the relay RPC channel.
-  - Intercept `vscode.languages.registerHoverProvider`, `registerCompletionItemProvider`, and `registerDefinitionProvider` in the guest extension.
-  - Forward queries to the host, query the host's active language server, and return serialized completions/definitions.
-
-### 2. Shared Interactive Debugging
-- **Problem**: Pair programming often involves joint debugging sessions.
-- **Approach**:
-  - Share breakpoint states (added/removed/hit) via a dedicated `Y.Map`.
-  - Broadcast debug execution state (`stopped`, `running`, `stepIn`, `stepOver`).
-  - Host proxies the active debug session call stack and variable inspection tree to guest debug views.
-
-### 3. Binary Asset & Image Previews
-- **Problem**: Virtual FS currently handles UTF-8 source files; large binaries are rejected to protect memory.
-- **Approach**:
-  - Chunked streaming for image files (`.png`, `.svg`, `.jpg`) and assets up to 10MB.
-  - Implement custom `CustomReadonlyEditorProvider` to preview images in guest tabs.
+## Phase 2: Rich Development Capabilities (v0.2.0 - Completed)
+- [x] **Language Feature Proxying (LSP Mirroring)**:
+  - Lightweight LSP proxy over relay RPC channel (`lsp.hover`, `lsp.completion`, `lsp.definition`, `lsp.references`).
+  - Registered `HoverProvider`, `CompletionItemProvider`, `DefinitionProvider`, `ReferenceProvider` on `colive` URI schemes.
+  - Portable path re-mapping between host local files and guest `colive:/` workspace URIs.
+- [x] **Shared Interactive Debugging**:
+  - Broadcast debug state (`stopped`, `running`, `inactive`) via `DebugAdapterTracker` event interception.
+  - Remote DAP call stack inspection (`debug.stack.req`) and variable tree inspection (`debug.variables.req`).
+  - Guest stepping commands (`colive.debugContinue`, `stepOver`, `stepInto`, `stepOut`, `pause`).
+  - Bidirectional breakpoint synchronization across host and guest editors (`debug.breakpoints`).
+- [x] **Binary Asset & Image Previews**:
+  - Chunked file streaming (`fs.readChunk.req` / `fs.readChunk.res`) for large assets up to 10MB.
+  - Native binary image rendering in guest virtual filesystem for `.png`, `.jpg`, `.svg`, `.webp`, `.ico`.
+  - Custom Readonly Editor Provider (`colive.imagePreview`) with zoom in/out/reset controls and metadata banner.
 
 ---
 

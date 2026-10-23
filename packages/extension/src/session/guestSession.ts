@@ -21,6 +21,10 @@ import os from 'node:os';
 import fs from 'node:fs';
 import { GuestDiagnosticsReceiver } from '../diagnostics/diagnosticsService.js';
 import { GuestTerminalService } from '../terminal/index.js';
+import { GuestLspClient } from '../guest/lspClient.js';
+import { GuestDebugClient } from '../guest/debugClient.js';
+import { CoLiveImageEditorProvider } from '../guest/imagePreview.js';
+import { extensionContext } from '../extension.js';
 import { SessionController } from './sessionController.js';
 import { buildDeepLink, buildWebInviteUrl, buildPasteCode } from '../invite.js';
 
@@ -39,10 +43,14 @@ export class GuestSession extends SessionController {
   public commentsManager: CommentsManager | null = null;
   public diagnosticsReceiver: GuestDiagnosticsReceiver | null = null;
   public terminalService: GuestTerminalService | null = null;
+  public lspClient: GuestLspClient | null = null;
+  public debugClient: GuestDebugClient | null = null;
   public onJoinAccepted?: (guestToken: string) => void;
   public isReloading = false;
   private previousTerminalCwd?: string;
   private fsRegistration: vscode.Disposable | null = null;
+  private debugTreeRegistration: vscode.Disposable | null = null;
+  private imageEditorRegistration: vscode.Disposable | null = null;
   private mountedFolderUri: vscode.Uri | null = null;
   private serverUrl: string;
   private displayName: string;
@@ -67,6 +75,9 @@ export class GuestSession extends SessionController {
     this.connection.on('stateChange', (connState) => {
       if (connState === 'reconnecting') {
         this.setState('reconnecting');
+      } else if (connState === 'disconnected') {
+        this.setState('ended', 'Disconnected from server');
+        this.dispose();
       }
     });
 
@@ -224,6 +235,17 @@ export class GuestSession extends SessionController {
           // Initialize guest terminal service
           this.terminalService = new GuestTerminalService(this.connection!);
           this.terminalService.setReadOnly(this.permission !== 'terminalAccess');
+
+          // Initialize Phase 2: LSP Client, Debug Client, and Image Preview Provider
+          this.lspClient = new GuestLspClient(folderName, this.connection!);
+          this.debugClient = new GuestDebugClient(folderName, this.connection!);
+          this.debugTreeRegistration = vscode.window.registerTreeDataProvider('colive.debug', this.debugClient);
+          if (extensionContext) {
+            this.imageEditorRegistration = vscode.window.registerCustomEditorProvider(
+              CoLiveImageEditorProvider.viewType,
+              new CoLiveImageEditorProvider(extensionContext, this.fsProvider!),
+            );
+          }
 
           this.setState('active');
           this._onDidChangeParticipants.fire(this.getParticipants());
@@ -400,6 +422,39 @@ export class GuestSession extends SessionController {
         Logger.warn('Error disposing presenceManager', { err });
       }
       this.presenceManager = null;
+    }
+
+    if (this.imageEditorRegistration) {
+      try {
+        this.imageEditorRegistration.dispose();
+      } catch (err) {
+        Logger.warn('Error disposing imageEditorRegistration', { err });
+      }
+      this.imageEditorRegistration = null;
+    }
+    if (this.debugTreeRegistration) {
+      try {
+        this.debugTreeRegistration.dispose();
+      } catch (err) {
+        Logger.warn('Error disposing debugTreeRegistration', { err });
+      }
+      this.debugTreeRegistration = null;
+    }
+    if (this.debugClient) {
+      try {
+        this.debugClient.dispose();
+      } catch (err) {
+        Logger.warn('Error disposing debugClient', { err });
+      }
+      this.debugClient = null;
+    }
+    if (this.lspClient) {
+      try {
+        this.lspClient.dispose();
+      } catch (err) {
+        Logger.warn('Error disposing lspClient', { err });
+      }
+      this.lspClient = null;
     }
 
     if (this.syncManager) {

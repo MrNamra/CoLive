@@ -13,6 +13,7 @@ import {
   generateInitialsAvatarSvg,
   sanitizeCommentMarkdown,
 } from '../src/comments/commentValidator.js';
+import { CommentsManager } from '../src/comments/CommentsManager.js';
 import {
   escapeHtml,
   safeLinkify,
@@ -146,6 +147,20 @@ describe('Milestone 8: Comments, Chat, Diagnostics', () => {
         commentId: 'cmt_1',
       };
       expect(validateCommentOp(deleteOp, hostUser, true, sampleThread).valid).toBe(true);
+
+      // Deleting entire thread without commentId
+      const deleteThreadOp: CommentOp = {
+        v: 1,
+        type: 'comment.op',
+        op: 'delete',
+        threadId: 'th_1',
+      };
+      // Author can delete their own thread
+      expect(validateCommentOp(deleteThreadOp, guestUser, true, sampleThread).valid).toBe(true);
+      // Host can delete any thread
+      expect(validateCommentOp(deleteThreadOp, hostUser, true, sampleThread).valid).toBe(true);
+      // Other guest cannot delete someone else's thread
+      expect(validateCommentOp(deleteThreadOp, otherGuest, true, sampleThread).valid).toBe(false);
     });
 
     it('validates resolve and unresolve operations', () => {
@@ -468,7 +483,7 @@ describe('Milestone 8: Comments, Chat, Diagnostics', () => {
     it('syncs missed messages sent during retry period upon reconnection and handles chat.clear', () => {
       const provider = new ChatViewProvider(vscode.Uri.file('/extension'));
       const sentMessages: any[] = [];
-      const listeners: Record<string, Function[]> = {};
+      const listeners: Record<string, ((...args: any[]) => void)[]> = {};
 
       const mockConn = {
         send: vi.fn((m) => sentMessages.push(m)),
@@ -586,4 +601,429 @@ describe('Milestone 8: Comments, Chat, Diagnostics', () => {
       expect(numberToVsCodeSeverity(3)).toBe(vscode.DiagnosticSeverity.Hint);
     });
   });
+
+  describe('Guest and Host Comment Lifecycle and Minimization', () => {
+    function createMockConnection() {
+      const listeners: Record<string, ((...args: any[]) => void)[]> = {};
+      const sentMessages: any[] = [];
+      return {
+        sentMessages,
+        send: vi.fn((m) => sentMessages.push(m)),
+        sendJson: vi.fn((m) => sentMessages.push(m)),
+        request: vi.fn(),
+        onMessage: vi.fn((fn) => {
+          (listeners['message'] ||= []).push(fn);
+          return { dispose: () => {} };
+        }),
+        on: vi.fn((evt, fn) => {
+          (listeners[evt] ||= []).push(fn);
+          return { dispose: () => {} };
+        }),
+        emitMessage: (msg: any) => {
+          for (const fn of listeners['message'] || []) {
+            fn(msg);
+          }
+        },
+      };
+    }
+
+    it('retains guest comments when collapsed/minimized and keeps them in active threads and tree view', async () => {
+      const mockConn = createMockConnection();
+      const guestManager = new CommentsManager({
+        connection: mockConn as any,
+        role: 'guest',
+        userId: 'guest_alice',
+        userName: 'Alice',
+        userColor: '#3CB44B',
+        permission: 'readWrite',
+        folderName: 'Shared',
+      });
+
+      // Mock open editor on guest colive filesystem
+      const guestDocUri = vscode.Uri.parse('colive:/Shared/src/index.ts');
+      const mockDoc = {
+        uri: guestDocUri,
+        lineCount: 20,
+        positionAt: (idx: number) => new vscode.Position(0, idx),
+      };
+      (vscode.window as any).activeTextEditor = {
+        document: mockDoc,
+      };
+      (vscode.window as any).visibleTextEditors = [{ document: mockDoc }];
+
+      // Guest creates a thread in editor
+      const threadId = 'th_guest_1';
+      const range = new vscode.Range(2, 0, 2, 10);
+      const vsComment: vscode.Comment = {
+        author: { name: 'Alice' },
+        body: new vscode.MarkdownString('Guest inline feedback'),
+        mode: vscode.CommentMode.Preview,
+      };
+
+      // In VS Code, createCommentController creates a thread
+      const thread = (guestManager as any).commentController.createCommentThread(guestDocUri, range, [vsComment]);
+      thread.canReply = true;
+      thread.contextValue = 'unresolved';
+      thread.collapsibleState = vscode.CommentThreadCollapsibleState.Expanded;
+
+      guestManager.registerActiveThread(threadId, thread);
+
+      await guestManager.dispatchOp({
+        v: 1,
+        type: 'comment.op',
+        op: 'create',
+        threadId,
+        commentId: 'cmt_1',
+        path: 'src/index.ts',
+        range: { startLine: 2, startChar: 0, endLine: 2, endChar: 10 },
+        body: 'Guest inline feedback',
+        authorId: 'guest_alice',
+        authorName: 'Alice',
+      });
+
+      // Verify thread is in guest's local state and sent over network
+      expect(guestManager.getAllThreads().length).toBe(1);
+      expect(guestManager.getThreadIdByVsThread(thread)).toBe(threadId);
+      expect(mockConn.sentMessages.some((m) => m.type === 'comment.op' && m.op === 'create')).toBe(true);
+
+      // User collapses/minimizes the comment thread in the UI
+      thread.collapsibleState = vscode.CommentThreadCollapsibleState.Collapsed;
+
+      // Sync runs (e.g. on editor focus or text change)
+      guestManager.syncCommentThreads();
+
+      // Crucial test: Thread must NOT be disposed, and collapsibleState must remain Collapsed (not forced Expanded)
+      expect(thread.isDisposed).toBe(false);
+      expect(thread.collapsibleState).toBe(vscode.CommentThreadCollapsibleState.Collapsed);
+      expect(guestManager.getAllThreads().length).toBe(1);
+
+      // Verify expandThread can re-expand it when opened from comments tree
+      guestManager.expandThread(threadId);
+      expect(thread.collapsibleState).toBe(vscode.CommentThreadCollapsibleState.Expanded);
+
+      guestManager.dispose();
+    });
+
+    it('syncs existing comments from host to guest on connection via comment.sync.req', async () => {
+      const hostConn = createMockConnection();
+      const hostManager = new CommentsManager({
+        connection: hostConn as any,
+        role: 'host',
+        userId: 'host_id',
+        userName: 'Host',
+        userColor: '#E6194B',
+        permission: 'readWrite',
+        workspaceRoot: '/workspace',
+      });
+
+      // Host creates an existing comment
+      await hostManager.dispatchOp({
+        v: 1,
+        type: 'comment.op',
+        op: 'create',
+        threadId: 'th_existing',
+        commentId: 'cmt_exist',
+        path: 'src/main.ts',
+        range: { startLine: 5, startChar: 0, endLine: 5, endChar: 15 },
+        body: 'Pre-existing comment by host',
+      });
+
+      expect(hostManager.getAllThreads().length).toBe(1);
+
+      // Host handles comment.sync.req from connecting guest
+      hostConn.emitMessage({
+        v: 1,
+        type: 'comment.sync.req',
+        id: 'sync_req_1',
+      });
+
+      const syncRes = hostConn.sentMessages.find((m) => m.type === 'comment.sync.res');
+      expect(syncRes).toBeDefined();
+      expect(syncRes.threads.length).toBe(1);
+      expect(syncRes.threads[0].id).toBe('th_existing');
+      expect(syncRes.threads[0].comments[0].body).toBe('Pre-existing comment by host');
+
+      // Guest initializes and applies the sync response
+      const guestConn = createMockConnection();
+      guestConn.request = vi.fn().mockResolvedValue(syncRes);
+
+      const guestManager = new CommentsManager({
+        connection: guestConn as any,
+        role: 'guest',
+        userId: 'guest_bob',
+        userName: 'Bob',
+        userColor: '#3CB44B',
+        permission: 'readWrite',
+        folderName: 'Shared',
+      });
+
+      await guestManager.requestCommentsSync();
+
+      // Guest now has host's pre-existing comments
+      expect(guestManager.getAllThreads().length).toBe(1);
+      expect(guestManager.getAllThreads()[0].id).toBe('th_existing');
+
+      hostManager.dispose();
+      guestManager.dispose();
+    });
+
+    it('relays host comments to guest and guest replies in real-time', async () => {
+      const hostConn = createMockConnection();
+      const guestConn = createMockConnection();
+
+      const hostManager = new CommentsManager({
+        connection: hostConn as any,
+        role: 'host',
+        userId: 'host_user',
+        userName: 'Host',
+        userColor: '#E6194B',
+        permission: 'readWrite',
+        workspaceRoot: '/workspace',
+      });
+
+      const guestManager = new CommentsManager({
+        connection: guestConn as any,
+        role: 'guest',
+        userId: 'guest_user',
+        userName: 'Guest',
+        userColor: '#3CB44B',
+        permission: 'readWrite',
+        folderName: 'Shared',
+      });
+
+      // Host creates comment
+      const createOp: CommentOp = {
+        v: 1,
+        type: 'comment.op',
+        op: 'create',
+        threadId: 'th_shared_1',
+        commentId: 'cmt_h1',
+        path: 'src/app.ts',
+        range: { startLine: 1, startChar: 0, endLine: 1, endChar: 5 },
+        body: 'Check this line',
+        authorId: 'host_user',
+        authorName: 'Host',
+      };
+
+      await hostManager.dispatchOp(createOp);
+
+      // Guest receives host's comment.op
+      guestConn.emitMessage(createOp);
+
+      expect(guestManager.getAllThreads().length).toBe(1);
+      expect(guestManager.getAllThreads()[0].comments[0].body).toBe('Check this line');
+
+      // Guest replies to host's thread
+      const replyOp: CommentOp = {
+        v: 1,
+        type: 'comment.op',
+        op: 'reply',
+        threadId: 'th_shared_1',
+        commentId: 'cmt_g1',
+        body: 'Looks good to me!',
+        authorId: 'guest_user',
+        authorName: 'Guest',
+      };
+
+      await guestManager.dispatchOp(replyOp);
+
+      // Host receives guest's reply
+      hostConn.emitMessage(replyOp);
+
+      expect(hostManager.getAllThreads()[0].comments.length).toBe(2);
+      expect(hostManager.getAllThreads()[0].comments[1].body).toBe('Looks good to me!');
+
+      hostManager.dispose();
+      guestManager.dispose();
+    });
+
+    it('allows host to discard/delete a comment thread after minimizing and reopening it', async () => {
+      const hostConn = createMockConnection();
+      const hostManager = new CommentsManager({
+        connection: hostConn as any,
+        role: 'host',
+        userId: 'host_admin',
+        userName: 'Admin',
+        userColor: '#E6194B',
+        permission: 'readWrite',
+        workspaceRoot: '/workspace',
+      });
+
+      const docUri = vscode.Uri.file('/workspace/index.ts');
+      const mockDoc = {
+        uri: docUri,
+        lineCount: 15,
+        positionAt: (idx: number) => new vscode.Position(0, idx),
+      };
+      (vscode.window as any).activeTextEditor = { document: mockDoc };
+      (vscode.window as any).visibleTextEditors = [{ document: mockDoc }];
+
+      const threadId = 'th_host_min';
+      const range = new vscode.Range(3, 0, 3, 10);
+      const vsComment: vscode.Comment = {
+        author: { name: 'Admin' },
+        body: new vscode.MarkdownString('Host comment to minimize'),
+        mode: vscode.CommentMode.Preview,
+        contextValue: 'canDelete',
+      };
+
+      const thread = (hostManager as any).commentController.createCommentThread(docUri, range, [vsComment]);
+      thread.canReply = true;
+      thread.contextValue = 'unresolved';
+      thread.collapsibleState = vscode.CommentThreadCollapsibleState.Expanded;
+
+      hostManager.registerActiveThread(threadId, thread);
+
+      await hostManager.dispatchOp({
+        v: 1,
+        type: 'comment.op',
+        op: 'create',
+        threadId,
+        commentId: 'cmt_min_1',
+        path: 'index.ts',
+        range: { startLine: 3, startChar: 0, endLine: 3, endChar: 10 },
+        body: 'Host comment to minimize',
+        authorId: 'host_admin',
+        authorName: 'Admin',
+      });
+
+      expect(hostManager.getAllThreads().length).toBe(1);
+
+      // Step 1: Host minimizes (collapses) the comment thread
+      thread.collapsibleState = vscode.CommentThreadCollapsibleState.Collapsed;
+      hostManager.syncCommentThreads();
+      expect(thread.collapsibleState).toBe(vscode.CommentThreadCollapsibleState.Collapsed);
+
+      // Step 2: Host reopens (expands) the comment thread
+      thread.collapsibleState = vscode.CommentThreadCollapsibleState.Expanded;
+      hostManager.syncCommentThreads();
+      expect(thread.collapsibleState).toBe(vscode.CommentThreadCollapsibleState.Expanded);
+
+      // Step 3: Host discards that comment thread (op: delete)
+      await hostManager.dispatchOp({
+        v: 1,
+        type: 'comment.op',
+        op: 'delete',
+        threadId,
+        authorId: 'host_admin',
+        authorName: 'Admin',
+      });
+
+      // Synchronize and verify thread is disposed and removed
+      hostManager.syncCommentThreads();
+      expect(hostManager.getAllThreads().length).toBe(0);
+      expect(thread.isDisposed).toBe(true);
+
+      hostManager.dispose();
+    });
+
+    it('allows discarding an unsubmitted draft comment thread after minimizing and reopening it', async () => {
+      const hostConn = createMockConnection();
+      const hostManager = new CommentsManager({
+        connection: hostConn as any,
+        role: 'host',
+        userId: 'host_admin',
+        userName: 'Admin',
+        userColor: '#E6194B',
+        permission: 'readWrite',
+        workspaceRoot: '/workspace',
+      });
+
+      const docUri = vscode.Uri.file('/workspace/index.ts');
+      const mockDoc = {
+        uri: docUri,
+        lineCount: 15,
+        positionAt: (idx: number) => new vscode.Position(0, idx),
+      };
+      (vscode.window as any).activeTextEditor = { document: mockDoc };
+      (vscode.window as any).visibleTextEditors = [{ document: mockDoc }];
+
+      // User clicked '+' on gutter: draft thread with empty comments
+      const draftThread = (hostManager as any).commentController.createCommentThread(
+        docUri,
+        new vscode.Range(5, 0, 5, 0),
+        [],
+      );
+      draftThread.canReply = true;
+      draftThread.collapsibleState = vscode.CommentThreadCollapsibleState.Expanded;
+
+      // User minimizes (collapses) the draft
+      draftThread.collapsibleState = vscode.CommentThreadCollapsibleState.Collapsed;
+
+      // User reopens the draft
+      draftThread.collapsibleState = vscode.CommentThreadCollapsibleState.Expanded;
+
+      // User discards the draft
+      draftThread.dispose();
+      expect(draftThread.isDisposed).toBe(true);
+
+      hostManager.dispose();
+    });
+
+    it('clears all comments from CoLive panel tree view upon session disconnect', async () => {
+      const mockConn = createMockConnection();
+      const hostManager = new CommentsManager({
+        connection: mockConn as any,
+        role: 'host',
+        userId: 'host_id',
+        userName: 'Host',
+        userColor: '#E6194B',
+        permission: 'readWrite',
+        workspaceRoot: '/workspace',
+      });
+
+      await hostManager.dispatchOp({
+        v: 1,
+        type: 'comment.op',
+        op: 'create',
+        threadId: 'th_panel_1',
+        commentId: 'cmt_panel_1',
+        path: 'src/file.ts',
+        range: { startLine: 1, startChar: 0, endLine: 1, endChar: 10 },
+        body: 'Panel comment',
+        authorId: 'host_id',
+        authorName: 'Host',
+      });
+
+      const { CommentsTreeProvider } = await import('../src/comments/commentsTree.js');
+      const treeProvider = new CommentsTreeProvider();
+      treeProvider.setCommentsManager(hostManager);
+
+      // Verify tree view shows the file and comments while in session
+      const itemsInSession = await treeProvider.getChildren();
+      expect(itemsInSession.length).toBe(1);
+      expect(itemsInSession[0].filePath).toBe('src/file.ts');
+
+      // Session disconnects: commentsManager is unlinked and cleared
+      treeProvider.setCommentsManager(null);
+
+      // Verify tree view is completely empty
+      const itemsAfterDisconnect = await treeProvider.getChildren();
+      expect(itemsAfterDisconnect.length).toBe(0);
+
+      // Verify hostManager dispose clears its internal map and active threads
+      hostManager.dispose();
+      expect(hostManager.getAllThreads().length).toBe(0);
+
+      treeProvider.dispose();
+    });
+
+    it('safely handles commands when invoked without arguments (e.g. keybindings or bare executions)', async () => {
+      // In VS Code, bare command execution or missing context must not throw Cannot read properties of undefined
+      const createCommentCmd = (vscode.commands as any)._registeredCommands?.get('colive.createComment');
+      const replyCommentCmd = (vscode.commands as any)._registeredCommands?.get('colive.replyComment');
+
+      if (createCommentCmd) {
+        await expect(createCommentCmd(undefined)).resolves.not.toThrow();
+        await expect(createCommentCmd({})).resolves.not.toThrow();
+      }
+
+      if (replyCommentCmd) {
+        await expect(replyCommentCmd(undefined)).resolves.not.toThrow();
+        await expect(replyCommentCmd({})).resolves.not.toThrow();
+      }
+    });
+  });
 });
+
+

@@ -97,3 +97,49 @@ export const DiagnosticItemSchema = z.object({
   code: z.union([z.string(), z.number()]).optional(),
 });
 export type DiagnosticItem = z.infer<typeof DiagnosticItemSchema>;
+
+// Phase 2: LSP Mirroring Types
+export const LspCompletionItemSchema = z.object({
+  label: z.string(),
+  kind: z.number().int().optional(),
+  detail: z.string().optional(),
+  documentation: z.string().optional(),
+  insertText: z.string().optional(),
+  sortText: z.string().optional(),
+});
+export type LspCompletionItem = z.infer<typeof LspCompletionItemSchema>;
+
+export const LspLocationSchema = z.object({
+  path: z.string(),
+  range: RangeSchema,
+});
+export type LspLocation = z.infer<typeof LspLocationSchema>;
+
+// Phase 2: Shared Debugging Types
+export const DebugStackFrameSchema = z.object({
+  id: z.number().int(),
+  name: z.string(),
+  file: z.string().optional(),
+  line: z.number().int().optional(),
+  column: z.number().int().optional(),
+});
+export type DebugStackFrame = z.infer<typeof DebugStackFrameSchema>;
+
+export const DebugVariableSchema = z.object({
+  name: z.string(),
+  value: z.string(),
+  type: z.string().optional(),
+  variablesReference: z.number().int().optional(),
+});
+export type DebugVariable = z.infer<typeof DebugVariableSchema>;
+
+export const DebugBreakpointSchema = z.object({
+  id: z.string(),
+  path: z.string(),
+  line: z.number().int(),
+  enabled: z.boolean(),
+  condition: z.string().optional(),
+  hitCondition: z.string().optional(),
+  logMessage: z.string().optional(),
+});
+export type DebugBreakpoint = z.infer<typeof DebugBreakpointSchema>;

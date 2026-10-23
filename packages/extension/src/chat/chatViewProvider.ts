@@ -118,6 +118,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
       this.history = [];
       this.unreadCount = 0;
       this.updateBadge();
+      this.postToWebview({ type: 'setHistory', messages: [] });
+      this.postToWebview({
+        type: 'setSessionState',
+        inSession: !!this.connection,
+        userName: this.currentUserName,
+      });
     }
 
     if (this.connection) {

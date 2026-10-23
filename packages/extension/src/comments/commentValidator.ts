@@ -82,7 +82,11 @@ export function validateCommentOp(
         return { valid: false, error: 'Thread not found' };
       }
       if (!op.commentId) {
-        return { valid: false, error: 'commentId is required for delete' };
+        // Deleting the entire thread: sender must be host or thread author
+        if (existingThread.authorId !== sender.id && sender.role !== 'host') {
+          return { valid: false, error: 'You can only delete your own comment threads' };
+        }
+        return { valid: true };
       }
       const comment = existingThread.comments.find((c) => c.id === op.commentId);
       if (!comment) {

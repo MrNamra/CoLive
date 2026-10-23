@@ -2,7 +2,7 @@
   "name": "colive",
   "displayName": "CoLive - Real-time Collaboration",
   "description": "Real-time collaborative editing, cursors, comments, and follow mode",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "publisher": "colive-team",
   "license": "MIT",
@@ -39,6 +39,18 @@
   ],
   "icon": "media/icon.png",
   "contributes": {
+    "customEditors": [
+      {
+        "viewType": "colive.imagePreview",
+        "displayName": "CoLive Image Preview",
+        "selector": [
+          {
+            "filenamePattern": "*.{png,jpg,jpeg,gif,svg,webp,bmp,ico,avif}"
+          }
+        ],
+        "priority": "option"
+      }
+    ],
     "viewsContainers": {
       "activitybar": [
         {
@@ -62,6 +74,10 @@
           "type": "webview",
           "id": "colive.chatView",
           "name": "Chat"
+        },
+        {
+          "id": "colive.debug",
+          "name": "Shared Debugging"
         }
       ]
     },
@@ -69,6 +85,10 @@
       {
         "view": "colive.participants",
         "contents": "Share your workspace or join an active session to collaborate in real-time.\n[Share Workspace](command:colive.startSession)\n[Join Session](command:colive.joinSession)"
+      },
+      {
+        "view": "colive.comments",
+        "contents": "No active session. Start or join a CoLive session to view and collaborate on comments."
       }
     ],
     "commands": [
@@ -159,6 +179,18 @@
         "icon": "$(trash)"
       },
       {
+        "command": "colive.deleteCommentThread",
+        "title": "Delete Thread",
+        "category": "CoLive",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "colive.discardComment",
+        "title": "Discard",
+        "category": "CoLive",
+        "icon": "$(close)"
+      },
+      {
         "command": "colive.resolveCommentThread",
         "title": "Resolve Thread",
         "category": "CoLive",
@@ -213,6 +245,42 @@
         "command": "colive.setTunnelUrl",
         "title": "CoLive: Set Cloudflare Tunnel URL",
         "category": "CoLive"
+      },
+      {
+        "command": "colive.debugContinue",
+        "title": "CoLive: Continue Debugging",
+        "category": "CoLive",
+        "icon": "$(debug-continue)"
+      },
+      {
+        "command": "colive.debugStepOver",
+        "title": "CoLive: Step Over",
+        "category": "CoLive",
+        "icon": "$(debug-step-over)"
+      },
+      {
+        "command": "colive.debugStepInto",
+        "title": "CoLive: Step Into",
+        "category": "CoLive",
+        "icon": "$(debug-step-into)"
+      },
+      {
+        "command": "colive.debugStepOut",
+        "title": "CoLive: Step Out",
+        "category": "CoLive",
+        "icon": "$(debug-step-out)"
+      },
+      {
+        "command": "colive.debugPause",
+        "title": "CoLive: Pause Debugging",
+        "category": "CoLive",
+        "icon": "$(debug-pause)"
+      },
+      {
+        "command": "colive.previewImage",
+        "title": "CoLive: Preview Image Asset",
+        "category": "CoLive",
+        "icon": "$(file-media)"
       }
     ],
     "keybindings": [
@@ -242,18 +310,6 @@
         "key": "ctrl+alt+l t",
         "mac": "cmd+alt+l t",
         "when": "colive.inSession && colive.isGuest"
-      },
-      {
-        "command": "colive.createComment",
-        "key": "ctrl+enter",
-        "mac": "cmd+enter",
-        "when": "commentEditorFocused"
-      },
-      {
-        "command": "colive.replyComment",
-        "key": "ctrl+enter",
-        "mac": "cmd+enter",
-        "when": "commentEditorFocused"
       }
     ],
     "menus": {
@@ -287,6 +343,26 @@
           "command": "colive.clearChat",
           "when": "view == colive.chatView",
           "group": "navigation@0"
+        },
+        {
+          "command": "colive.debugContinue",
+          "when": "view == colive.debug && colive.inSession",
+          "group": "navigation@1"
+        },
+        {
+          "command": "colive.debugStepOver",
+          "when": "view == colive.debug && colive.inSession",
+          "group": "navigation@2"
+        },
+        {
+          "command": "colive.debugStepInto",
+          "when": "view == colive.debug && colive.inSession",
+          "group": "navigation@3"
+        },
+        {
+          "command": "colive.debugPause",
+          "when": "view == colive.debug && colive.inSession",
+          "group": "navigation@4"
         }
       ],
       "editor/context": [
@@ -314,24 +390,19 @@
       ],
       "comments/commentThread/title": [
         {
-          "command": "colive.createComment",
-          "group": "navigation@1",
-          "when": "commentController == colive"
-        },
-        {
-          "command": "colive.replyComment",
-          "group": "navigation@2",
-          "when": "commentController == colive && commentThread.contextValue == unresolved"
-        },
-        {
           "command": "colive.resolveCommentThread",
-          "group": "navigation@3",
+          "group": "navigation@1",
           "when": "commentController == colive && commentThread.contextValue == unresolved"
         },
         {
           "command": "colive.unresolveCommentThread",
-          "group": "navigation@3",
+          "group": "navigation@1",
           "when": "commentController == colive && commentThread.contextValue == resolved"
+        },
+        {
+          "command": "colive.deleteCommentThread",
+          "group": "navigation@2",
+          "when": "commentController == colive"
         }
       ],
       "comments/commentThread/context": [
@@ -341,7 +412,7 @@
           "when": "commentController == colive"
         },
         {
-          "command": "colive.replyComment",
+          "command": "colive.discardComment",
           "group": "inline@2",
           "when": "commentController == colive"
         }
@@ -479,7 +550,7 @@
     "vscode:prepublish": "npm run build",
     "build": "node esbuild.js --production",
     "watch": "node esbuild.js --watch",
-    "clean": "rm -rf dist",
+    "clean": "rm -rf dist *.vsix",
     "package": "vsce package --no-dependencies",
     "test": "vitest run"
   },

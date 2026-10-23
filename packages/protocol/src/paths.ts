@@ -121,3 +121,29 @@ export function isExcluded(relPath: string, patterns: string[]): boolean {
 
   return false;
 }
+
+/**
+ * Common image extensions supported for binary previews.
+ */
+export const IMAGE_EXTENSIONS = new Set([
+  '.png',
+  '.jpg',
+  '.jpeg',
+  '.gif',
+  '.svg',
+  '.webp',
+  '.bmp',
+  '.ico',
+  '.avif',
+]);
+
+/**
+ * Returns true if the file path has an image extension.
+ */
+export function isImageFile(filePath: string): boolean {
+  if (!filePath || typeof filePath !== 'string') return false;
+  const lastDot = filePath.lastIndexOf('.');
+  if (lastDot === -1) return false;
+  const ext = filePath.slice(lastDot).toLowerCase();
+  return IMAGE_EXTENSIONS.has(ext);
+}

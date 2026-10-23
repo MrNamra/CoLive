@@ -339,6 +339,7 @@ export const onDidChangeTextDocumentEmitter = new EventEmitter<unknown>();
 export const onDidOpenTextDocumentEmitter = new EventEmitter<unknown>();
 export const onDidCloseTextDocumentEmitter = new EventEmitter<unknown>();
 export const onDidChangeActiveTextEditorEmitter = new EventEmitter<unknown>();
+export const onDidChangeVisibleTextEditorsEmitter = new EventEmitter<unknown>();
 export const onDidChangeTextEditorSelectionEmitter = new EventEmitter<unknown>();
 export const onDidChangeTextEditorVisibleRangesEmitter = new EventEmitter<unknown>();
 export enum StatusBarAlignment {
@@ -394,7 +395,10 @@ export const window = {
     );
   },
   registerUriHandler: () => new Disposable(),
+  registerCustomEditorProvider: () => new Disposable(),
+  registerTreeDataProvider: () => new Disposable(),
   onDidChangeActiveTextEditor: onDidChangeActiveTextEditorEmitter.event,
+  onDidChangeVisibleTextEditors: onDidChangeVisibleTextEditorsEmitter.event,
   onDidChangeTextEditorSelection: onDidChangeTextEditorSelectionEmitter.event,
   onDidChangeTextEditorVisibleRanges: onDidChangeTextEditorVisibleRangesEmitter.event,
   showTextDocument: async (docOrUri: unknown, _opts?: unknown): Promise<unknown> => {
@@ -580,12 +584,80 @@ export class MockDiagnosticCollection {
 
 export const onDidChangeDiagnosticsEmitter = new EventEmitter<unknown>();
 
+export class Hover {
+  public contents: Array<string | MarkdownString>;
+  public range?: Range;
+  constructor(contents: Array<string | MarkdownString> | string | MarkdownString, range?: Range) {
+    this.contents = Array.isArray(contents) ? contents : [contents];
+    this.range = range;
+  }
+}
+
+export enum CompletionItemKind {
+  Text = 0,
+  Method = 1,
+  Function = 2,
+  Constructor = 3,
+  Field = 4,
+  Variable = 5,
+  Class = 6,
+  Interface = 7,
+  Module = 8,
+  Property = 9,
+}
+
+export class CompletionItem {
+  public label: string;
+  public kind?: CompletionItemKind;
+  public detail?: string;
+  public documentation?: string | MarkdownString;
+  public insertText?: string;
+  public sortText?: string;
+  constructor(label: string, kind?: CompletionItemKind) {
+    this.label = label;
+    this.kind = kind;
+  }
+}
+
+export class CompletionList {
+  public items: CompletionItem[];
+  public isIncomplete: boolean;
+  constructor(items: CompletionItem[] = [], isIncomplete = false) {
+    this.items = items;
+    this.isIncomplete = isIncomplete;
+  }
+}
+
+export class Location {
+  public uri: Uri;
+  public range: Range;
+  constructor(uri: Uri, range: Range) {
+    this.uri = uri;
+    this.range = range;
+  }
+}
+
 export const languages = {
   createDiagnosticCollection: (name: string): MockDiagnosticCollection => {
     return new MockDiagnosticCollection(name);
   },
   getDiagnostics: (_uri?: Uri): Diagnostic[] => [],
   onDidChangeDiagnostics: onDidChangeDiagnosticsEmitter.event,
+  registerHoverProvider: () => new Disposable(),
+  registerCompletionItemProvider: () => new Disposable(),
+  registerDefinitionProvider: () => new Disposable(),
+  registerReferenceProvider: () => new Disposable(),
+};
+
+export const onDidChangeActiveDebugSessionEmitter = new EventEmitter<unknown>();
+export const onDidChangeBreakpointsEmitter = new EventEmitter<unknown>();
+
+export const debug = {
+  activeDebugSession: undefined as unknown,
+  breakpoints: [] as unknown[],
+  onDidChangeActiveDebugSession: onDidChangeActiveDebugSessionEmitter.event,
+  onDidChangeBreakpoints: onDidChangeBreakpointsEmitter.event,
+  registerDebugAdapterTrackerFactory: () => new Disposable(),
 };
 
 export const commands = {

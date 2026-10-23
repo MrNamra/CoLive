@@ -10,6 +10,7 @@ import { ParticipantsTreeProvider, ParticipantTreeItem } from './ui/participants
 import { StatusBarManager } from './ui/statusBar.js';
 import { ChatViewProvider } from './chat/chatViewProvider.js';
 import { CommentsTreeProvider } from './comments/commentsTree.js';
+import { generateInitialsAvatarSvg } from './comments/commentValidator.js';
 import { TunnelManager } from './tunnel/TunnelManager.js';
 import {
   getOsInstallCommand,
@@ -146,6 +147,17 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.commands.registerCommand('colive.hello', () => {
       vscode.window.showInformationMessage(Strings.helloMessage);
+    }),
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('colive.previewImage', async (uri?: vscode.Uri) => {
+      const targetUri = uri || vscode.window.activeTextEditor?.document.uri;
+      if (!targetUri) {
+        vscode.window.showInformationMessage(Strings.noImageSelected);
+        return;
+      }
+      await vscode.commands.executeCommand('vscode.openWith', targetUri, 'colive.imagePreview');
     }),
   );
 
@@ -373,14 +385,16 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('colive.createComment', async (reply: vscode.CommentReply) => {
+    vscode.commands.registerCommand('colive.createComment', async (reply?: vscode.CommentReply) => {
       let manager: CommentsManager | null = null;
       if (activeSession instanceof HostSession) manager = activeSession.commentsManager;
       if (activeSession instanceof GuestSession) manager = activeSession.commentsManager;
       if (!manager) return;
 
+      if (!reply || !reply.thread) return;
+
       const thread = reply.thread;
-      const text = reply.text.trim();
+      const text = (reply.text || '').trim();
       if (!text) return;
 
       const doc = await vscode.workspace.openTextDocument(thread.uri);
@@ -388,23 +402,49 @@ export function activate(context: vscode.ExtensionContext): void {
       if (!relPath) return;
 
       const existingThreadId = manager.getThreadIdByVsThread(thread);
+      const commentId = `cmt_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+      const vsComment: vscode.Comment = {
+        author: {
+          name: manager.getUserName(),
+          iconPath: vscode.Uri.parse(generateInitialsAvatarSvg(manager.getUserName(), manager.getUserColor())),
+        },
+        body: new vscode.MarkdownString(text, false),
+        mode: vscode.CommentMode.Preview,
+        contextValue: 'canDelete',
+      };
+      (vsComment as any).commentId = commentId;
+
       if (existingThreadId) {
+        (vsComment as any).threadId = existingThreadId;
         // Thread already exists, this is a reply
+        thread.comments = [...thread.comments, vsComment];
         await manager.dispatchOp({
           v: 1,
           type: 'comment.op',
           op: 'reply',
           threadId: existingThreadId,
+          commentId,
           body: text,
+          authorId: manager.getUserId(),
+          authorName: manager.getUserName(),
         });
       } else {
-        // New thread
+        // New thread: populate comments so VS Code retains it when collapsed/minimized
         const newThreadId = `th_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+        (thread as any).threadId = newThreadId;
+        (vsComment as any).threadId = newThreadId;
+        thread.comments = [vsComment];
+        thread.canReply = true;
+        thread.contextValue = 'unresolved';
+        thread.collapsibleState = vscode.CommentThreadCollapsibleState.Expanded;
+        manager.registerActiveThread(newThreadId, thread);
+
         await manager.dispatchOp({
           v: 1,
           type: 'comment.op',
           op: 'create',
           threadId: newThreadId,
+          commentId,
           path: relPath,
           range: {
             startLine: thread.range.start.line,
@@ -413,92 +453,266 @@ export function activate(context: vscode.ExtensionContext): void {
             endChar: thread.range.end.character,
           },
           body: text,
+          authorId: manager.getUserId(),
+          authorName: manager.getUserName(),
         });
       }
     }),
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('colive.replyComment', async (reply: vscode.CommentReply) => {
+    vscode.commands.registerCommand('colive.replyComment', async (reply?: vscode.CommentReply) => {
       let manager: CommentsManager | null = null;
       if (activeSession instanceof HostSession) manager = activeSession.commentsManager;
       if (activeSession instanceof GuestSession) manager = activeSession.commentsManager;
       if (!manager) return;
 
+      if (!reply || !reply.thread) return;
+
       const thread = reply.thread;
-      const text = reply.text.trim();
+      const text = (reply.text || '').trim();
       if (!text) return;
 
       const threadId = manager.getThreadIdByVsThread(thread);
       if (!threadId) return;
+
+      const commentId = `cmt_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+      const vsComment: vscode.Comment = {
+        author: {
+          name: manager.getUserName(),
+          iconPath: vscode.Uri.parse(generateInitialsAvatarSvg(manager.getUserName(), manager.getUserColor())),
+        },
+        body: new vscode.MarkdownString(text, false),
+        mode: vscode.CommentMode.Preview,
+        contextValue: 'canDelete',
+      };
+      (vsComment as any).commentId = commentId;
+      (vsComment as any).threadId = threadId;
+      thread.comments = [...thread.comments, vsComment];
 
       await manager.dispatchOp({
         v: 1,
         type: 'comment.op',
         op: 'reply',
         threadId,
+        commentId,
         body: text,
+        authorId: manager.getUserId(),
+        authorName: manager.getUserName(),
       });
     }),
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('colive.deleteComment', async (comment: vscode.Comment) => {
+    vscode.commands.registerCommand('colive.deleteComment', async (arg?: any) => {
       let manager: CommentsManager | null = null;
       if (activeSession instanceof HostSession) manager = activeSession.commentsManager;
       if (activeSession instanceof GuestSession) manager = activeSession.commentsManager;
-      if (!manager) return;
+      if (!manager || !arg) return;
 
-      // Find thread containing this comment
-      for (const t of manager.getAllThreads()) {
-        const found = t.comments.find((c) => c.body === (typeof comment.body === 'string' ? comment.body : comment.body.value));
-        if (found) {
-          await manager.dispatchOp({
-            v: 1,
-            type: 'comment.op',
-            op: 'delete',
-            threadId: t.id,
-            commentId: found.id,
-          });
-          break;
+      const comment: vscode.Comment | undefined = arg?.comment ? arg.comment : (arg?.body !== undefined ? arg : undefined);
+      const thread: vscode.CommentThread | undefined = arg?.thread ? arg.thread : (arg?.comments !== undefined ? arg : undefined);
+
+      let targetThreadId: string | undefined =
+        (comment as any)?.threadId ||
+        (thread ? manager.getThreadIdByVsThread(thread) : undefined);
+      let targetCommentId: string | undefined = (comment as any)?.commentId;
+
+      // Fallback matching if not tagged
+      if (!targetThreadId || !targetCommentId) {
+        const commentBodyStr = comment?.body
+          ? typeof comment.body === 'string'
+            ? comment.body
+            : comment.body.value
+          : undefined;
+
+        for (const t of manager.getAllThreads()) {
+          if (targetThreadId && t.id !== targetThreadId) continue;
+          if (commentBodyStr) {
+            const found = t.comments.find(
+              (c) => c.body === commentBodyStr || c.body.trim() === commentBodyStr.trim(),
+            );
+            if (found) {
+              targetThreadId = t.id;
+              targetCommentId = found.id;
+              break;
+            }
+          }
+        }
+      }
+
+      if (!targetThreadId) {
+        if (thread) {
+          thread.dispose();
+        }
+        return;
+      }
+
+      if (targetCommentId) {
+        await manager.dispatchOp({
+          v: 1,
+          type: 'comment.op',
+          op: 'delete',
+          threadId: targetThreadId,
+          commentId: targetCommentId,
+          authorId: manager.getUserId(),
+          authorName: manager.getUserName(),
+        });
+      } else {
+        await manager.dispatchOp({
+          v: 1,
+          type: 'comment.op',
+          op: 'delete',
+          threadId: targetThreadId,
+          authorId: manager.getUserId(),
+          authorName: manager.getUserName(),
+        });
+      }
+
+      if (thread) {
+        const remaining = thread.comments.filter((c) => (c as any).commentId !== targetCommentId);
+        if (remaining.length === 0) {
+          thread.dispose();
+          manager.unregisterActiveThread(targetThreadId);
+        } else {
+          thread.comments = remaining;
         }
       }
     }),
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('colive.resolveCommentThread', async (thread: vscode.CommentThread) => {
+    vscode.commands.registerCommand('colive.deleteCommentThread', async (arg?: any) => {
       let manager: CommentsManager | null = null;
       if (activeSession instanceof HostSession) manager = activeSession.commentsManager;
       if (activeSession instanceof GuestSession) manager = activeSession.commentsManager;
-      if (!manager) return;
+      if (!manager || !arg) return;
+
+      const thread: vscode.CommentThread | undefined = arg?.thread
+        ? arg.thread
+        : arg?.comments !== undefined
+        ? arg
+        : undefined;
+
+      if (!thread) return;
+
+      // If thread has no comments (draft thread), dispose immediately
+      if (!thread.comments || thread.comments.length === 0) {
+        const draftId = manager.getThreadIdByVsThread(thread);
+        if (draftId) {
+          manager.unregisterActiveThread(draftId);
+        }
+        thread.dispose();
+        return;
+      }
+
+      const threadId = manager.getThreadIdByVsThread(thread);
+      if (!threadId) {
+        thread.dispose();
+        return;
+      }
+
+      await manager.dispatchOp({
+        v: 1,
+        type: 'comment.op',
+        op: 'delete',
+        threadId,
+        authorId: manager.getUserId(),
+        authorName: manager.getUserName(),
+      });
+
+      thread.dispose();
+      manager.unregisterActiveThread(threadId);
+    }),
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('colive.discardComment', async (replyOrThread?: any) => {
+      let manager: CommentsManager | null = null;
+      if (activeSession instanceof HostSession) manager = activeSession.commentsManager;
+      if (activeSession instanceof GuestSession) manager = activeSession.commentsManager;
+      if (!manager || !replyOrThread) return;
+
+      const thread: vscode.CommentThread | undefined = replyOrThread?.thread
+        ? replyOrThread.thread
+        : replyOrThread?.comments !== undefined
+        ? replyOrThread
+        : undefined;
+
+      if (!thread) return;
+
+      const replyText = typeof replyOrThread.text === 'string' ? replyOrThread.text.trim() : '';
+
+      // If draft thread with no comments, dispose immediately
+      if (!thread.comments || thread.comments.length === 0) {
+        const draftId = manager.getThreadIdByVsThread(thread);
+        if (draftId) {
+          manager.unregisterActiveThread(draftId);
+        }
+        thread.dispose();
+        return;
+      }
+
+      const threadId = manager.getThreadIdByVsThread(thread);
+      if (!replyText && threadId) {
+        // Discard thread/comment when reply text is empty
+        await manager.dispatchOp({
+          v: 1,
+          type: 'comment.op',
+          op: 'delete',
+          threadId,
+          authorId: manager.getUserId(),
+          authorName: manager.getUserName(),
+        });
+        thread.dispose();
+        manager.unregisterActiveThread(threadId);
+      } else if (!threadId) {
+        thread.dispose();
+      }
+    }),
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('colive.resolveCommentThread', async (thread?: vscode.CommentThread) => {
+      let manager: CommentsManager | null = null;
+      if (activeSession instanceof HostSession) manager = activeSession.commentsManager;
+      if (activeSession instanceof GuestSession) manager = activeSession.commentsManager;
+      if (!manager || !thread) return;
 
       const threadId = manager.getThreadIdByVsThread(thread);
       if (threadId) {
+        thread.contextValue = 'resolved';
+        thread.collapsibleState = vscode.CommentThreadCollapsibleState.Collapsed;
         await manager.dispatchOp({
           v: 1,
           type: 'comment.op',
           op: 'resolve',
           threadId,
+          authorId: manager.getUserId(),
+          authorName: manager.getUserName(),
         });
       }
     }),
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('colive.unresolveCommentThread', async (thread: vscode.CommentThread) => {
+    vscode.commands.registerCommand('colive.unresolveCommentThread', async (thread?: vscode.CommentThread) => {
       let manager: CommentsManager | null = null;
       if (activeSession instanceof HostSession) manager = activeSession.commentsManager;
       if (activeSession instanceof GuestSession) manager = activeSession.commentsManager;
-      if (!manager) return;
+      if (!manager || !thread) return;
 
       const threadId = manager.getThreadIdByVsThread(thread);
       if (threadId) {
+        thread.contextValue = 'unresolved';
+        thread.collapsibleState = vscode.CommentThreadCollapsibleState.Expanded;
         await manager.dispatchOp({
           v: 1,
           type: 'comment.op',
           op: 'unresolve',
           threadId,
+          authorId: manager.getUserId(),
+          authorName: manager.getUserName(),
         });
       }
     }),
@@ -509,7 +723,10 @@ export function activate(context: vscode.ExtensionContext): void {
       if (!threadData || !threadData.path) return;
       let targetUri: vscode.Uri;
       if (activeSession instanceof HostSession) {
-        targetUri = vscode.Uri.file(`${vscode.workspace.workspaceFolders?.[0]?.uri.fsPath}/${threadData.path}`);
+        const root = vscode.workspace.workspaceFolders?.[0]?.uri;
+        targetUri = root ? vscode.Uri.joinPath(root, threadData.path) : vscode.Uri.file(threadData.path);
+      } else if (activeSession instanceof GuestSession && activeSession.mountedFolderUri) {
+        targetUri = vscode.Uri.joinPath(activeSession.mountedFolderUri, threadData.path);
       } else {
         targetUri = vscode.Uri.parse(`colive:/Shared/${threadData.path}`);
       }
@@ -518,6 +735,10 @@ export function activate(context: vscode.ExtensionContext): void {
         const editor = await vscode.window.showTextDocument(doc);
         const pos = new vscode.Position(threadData.range.startLine, threadData.range.startChar);
         editor.revealRange(new vscode.Range(pos, pos));
+        const manager = activeSession instanceof HostSession ? activeSession.commentsManager : (activeSession instanceof GuestSession ? activeSession.commentsManager : null);
+        if (manager) {
+          manager.expandThread(threadData.id);
+        }
       } catch (err) {
         Logger.warn('Failed to open comment thread file', { err, path: threadData.path });
       }
@@ -676,7 +897,8 @@ export function activate(context: vscode.ExtensionContext): void {
 }
 
 export function teardownActiveSessionUI(session?: SessionController | null): void {
-  if (session && activeSession !== session) return;
+  if (session && activeSession && activeSession !== session) return;
+  const targetSession = session || activeSession;
   activeSession = null;
   updateSessionContext(null);
   cleanupColiveWorkspaceFolders();
@@ -688,6 +910,14 @@ export function teardownActiveSessionUI(session?: SessionController | null): voi
   participantsTree?.setSession(null);
   commentsTree?.setCommentsManager(null);
   chatProvider?.setSession(null, '', '');
+  chatProvider?.clearChatLocally(false);
+
+  if (targetSession instanceof HostSession || targetSession instanceof GuestSession) {
+    if (targetSession.commentsManager) {
+      targetSession.commentsManager.dispose();
+      targetSession.commentsManager = null;
+    }
+  }
 }
 
 async function startHostSession(): Promise<void> {
@@ -949,7 +1179,6 @@ async function endCurrentSession(): Promise<void> {
 
   if (activeSession.getState() !== 'active') {
     const session = activeSession;
-    activeSession = null;
     try {
       session.dispose();
     } finally {
@@ -965,7 +1194,6 @@ async function endCurrentSession(): Promise<void> {
   const choice = await vscode.window.showWarningMessage(message, { modal: true }, button);
   if (choice === button) {
     const session = activeSession;
-    activeSession = null;
     try {
       await session.endSession();
     } finally {

@@ -11,7 +11,7 @@ export interface ParsedInvite {
 export function encodeInviteToken(sessionId: string, secret: string, serverUrl?: string): string {
   let serverPart = '';
   if (serverUrl) {
-    let clean = serverUrl.trim().replace(/^wss?:\/\//, '').replace(/\/ws$/, '');
+    const clean = serverUrl.trim().replace(/^wss?:\/\//, '').replace(/\/ws$/, '');
     if (!clean.includes('localhost') && !clean.includes('127.0.0.1')) {
       if (clean.endsWith('.trycloudflare.com')) {
         serverPart = '@' + clean.replace('.trycloudflare.com', '');

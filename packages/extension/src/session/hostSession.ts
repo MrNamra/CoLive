@@ -21,6 +21,8 @@ import { FollowController } from '../presence/FollowController.js';
 import { CommentsManager } from '../comments/CommentsManager.js';
 import { HostDiagnosticsBroadcaster } from '../diagnostics/diagnosticsService.js';
 import { HostTerminalService } from '../terminal/index.js';
+import { HostLspProxy } from '../host/lspProxy.js';
+import { HostDebugProxy } from '../host/debugProxy.js';
 import { SessionController } from './sessionController.js';
 
 export class HostSession extends SessionController {
@@ -36,6 +38,8 @@ export class HostSession extends SessionController {
   public commentsManager: CommentsManager | null = null;
   public diagnosticsBroadcaster: HostDiagnosticsBroadcaster | null = null;
   public terminalService: HostTerminalService | null = null;
+  public lspProxy: HostLspProxy | null = null;
+  public debugProxy: HostDebugProxy | null = null;
   private serverUrl: string;
   private publicServerUrl?: string;
   private displayName: string;
@@ -76,6 +80,9 @@ export class HostSession extends SessionController {
         this.setState('reconnecting');
       } else if (connState === 'connected' && this.state === 'reconnecting') {
         this.setState('active');
+      } else if (connState === 'disconnected') {
+        this.setState('ended', 'Disconnected from server');
+        this.dispose();
       }
     });
 
@@ -162,6 +169,10 @@ export class HostSession extends SessionController {
       this.workspaceRoot,
     );
 
+    // Initialize Phase 2: LSP Proxy & Debug Proxy
+    this.lspProxy = new HostLspProxy(this.workspaceRoot, this.connection);
+    this.debugProxy = new HostDebugProxy(this.workspaceRoot, this.connection);
+
     // Add self as host participant
     const hostParticipant: ParticipantInfo = {
       id: 'host',
@@ -231,6 +242,7 @@ export class HostSession extends SessionController {
     if (msg.type === 'server.sessionEnded') {
       this.setState('ended', msg.reason);
       vscode.window.showWarningMessage(`CoLive session ended: ${msg.reason}`);
+      this.dispose();
       return;
     }
   }
@@ -443,6 +455,22 @@ export class HostSession extends SessionController {
   public override dispose(): void {
     if (this.isDisposed) return;
 
+    if (this.debugProxy) {
+      try {
+        this.debugProxy.dispose();
+      } catch (err) {
+        Logger.warn('Error disposing debugProxy', { err });
+      }
+      this.debugProxy = null;
+    }
+    if (this.lspProxy) {
+      try {
+        this.lspProxy.dispose();
+      } catch (err) {
+        Logger.warn('Error disposing lspProxy', { err });
+      }
+      this.lspProxy = null;
+    }
     if (this.terminalService) {
       try {
         this.terminalService.dispose();

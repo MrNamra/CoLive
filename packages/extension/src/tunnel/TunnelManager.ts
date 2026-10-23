@@ -18,6 +18,7 @@ export class TunnelManager implements vscode.Disposable {
 
   constructor(storagePath?: string) {
     this.storagePath = storagePath;
+    this.cleanTunnelUrls();
   }
 
   public async canRunBinary(binPath: string): Promise<boolean> {
@@ -332,7 +333,6 @@ export class TunnelManager implements vscode.Disposable {
           this.activeTunnelUrl = webUrl;
           this.activeWsUrl = wsUrl;
 
-          this.saveTunnelUrls(wsUrl);
           Logger.info(`Cloudflare Tunnel discovered: ${webUrl} -> ${wsUrl}`);
 
           // Warm up edge to ensure DNS and edge proxying have propagated before returning
@@ -373,22 +373,6 @@ export class TunnelManager implements vscode.Disposable {
     });
   }
 
-  private saveTunnelUrls(wsUrl: string): void {
-    const candidatePaths: string[] = [];
-    if (vscode.workspace.workspaceFolders) {
-      for (const folder of vscode.workspace.workspaceFolders) {
-        candidatePaths.push(path.join(folder.uri.fsPath, '.tunnel-url'));
-      }
-    }
-
-    for (const p of candidatePaths) {
-      try {
-        fs.writeFileSync(p, wsUrl, 'utf8');
-      } catch {
-        // ignore
-      }
-    }
-  }
 
   private cleanTunnelUrls(): void {
     const candidatePaths: string[] = ['/tmp/colive-tunnel-url'];

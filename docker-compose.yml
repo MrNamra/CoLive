@@ -20,3 +20,25 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
+version: '3.8'
+
+services:
+  colive-relay:
+    build:
+      context: .
+      dockerfile: packages/server/Dockerfile
+    container_name: colive-relay
+    restart: unless-stopped
+    ports:
+      - "8787:8787"
+    environment:
+      - PORT=8787
+      - LOG_LEVEL=info
+      - MAX_PARTICIPANTS=10
+      - SESSION_TTL_HOURS=12
+      - PUBLIC_URL=http://localhost:8787
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8787/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

@@ -10,6 +10,8 @@ import {
   FsEntry,
   FsListReq,
   FsListRes,
+  FsReadChunkReq,
+  FsReadChunkRes,
   FsReadReq,
   FsReadRes,
   FsRenameReq,
@@ -20,6 +22,8 @@ import {
   FsWriteReq,
   FsWriteRes,
   isExcluded,
+  isImageFile,
+  MAX_ASSET_BYTES,
   normalizeWorkspacePath,
   PROTOCOL_VERSION,
 } from '@colive/protocol';
@@ -62,6 +66,9 @@ export class HostFileService implements vscode.Disposable {
             connection.send(res);
           } else if (msg.type === 'fs.read.req') {
             const res = await this.handleRead(msg);
+            connection.send(res);
+          } else if (msg.type === 'fs.readChunk.req') {
+            const res = await this.handleReadChunk(msg);
             connection.send(res);
           } else if (msg.type === 'fs.write.req') {
             const res = await this.handleWrite(msg);
@@ -230,10 +237,11 @@ export class HostFileService implements vscode.Disposable {
       throw new CoLiveError('INVALID_PATH', `Cannot read directory as file: ${req.path}`);
     }
 
-    if (stat.size > this.maxFileSizeBytes) {
+    const effectiveLimit = isImageFile(req.path) ? MAX_ASSET_BYTES : this.maxFileSizeBytes;
+    if (stat.size > effectiveLimit) {
       throw new CoLiveError(
         'TOO_LARGE',
-        `File size (${Math.round(stat.size / 1024)} KB) exceeds limit of ${Math.round(this.maxFileSizeBytes / (1024 * 1024))} MB`,
+        `File size (${Math.round(stat.size / 1024)} KB) exceeds limit of ${Math.round(effectiveLimit / (1024 * 1024))} MB`,
       );
     }
 
@@ -256,6 +264,51 @@ export class HostFileService implements vscode.Disposable {
       mtime: Math.floor(stat.mtimeMs),
       isBinary,
     };
+  }
+
+  public async handleReadChunk(req: FsReadChunkReq): Promise<FsReadChunkRes> {
+    const { fullPath } = this.resolveSecurePath(req.path);
+
+    if (!fs.existsSync(fullPath)) {
+      throw new CoLiveError('NOT_FOUND', `File not found: ${req.path}`);
+    }
+
+    const stat = await fs.promises.stat(fullPath);
+    if (stat.isDirectory()) {
+      throw new CoLiveError('INVALID_PATH', `Cannot read directory as chunk: ${req.path}`);
+    }
+
+    if (stat.size > MAX_ASSET_BYTES) {
+      throw new CoLiveError(
+        'TOO_LARGE',
+        `Asset size (${Math.round(stat.size / 1024)} KB) exceeds ${Math.round(MAX_ASSET_BYTES / (1024 * 1024))} MB limit`,
+      );
+    }
+
+    const offset = Math.min(req.offset, stat.size);
+    const maxChunk = 512 * 1024; // 512 KB per chunk
+    const length = Math.min(req.length, maxChunk, stat.size - offset);
+
+    const buffer = Buffer.alloc(length);
+    const fd = await fs.promises.open(fullPath, 'r');
+    try {
+      const { bytesRead } = await fd.read(buffer, 0, length, offset);
+      const dataBase64 = buffer.subarray(0, bytesRead).toString('base64');
+      const eof = offset + bytesRead >= stat.size;
+
+      return {
+        v: PROTOCOL_VERSION,
+        type: 'fs.readChunk.res',
+        id: req.id,
+        dataBase64,
+        offset,
+        bytesRead,
+        totalSize: stat.size,
+        eof,
+      };
+    } finally {
+      await fd.close();
+    }
   }
 
   public async handleWrite(req: FsWriteReq): Promise<FsWriteRes> {

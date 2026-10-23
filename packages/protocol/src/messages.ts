@@ -2,9 +2,16 @@ import { z } from 'zod';
 import { MAX_CHAT_TEXT_LENGTH, PROTOCOL_VERSION } from './constants.js';
 import { RpcErrorCodeSchema } from './errors.js';
 import {
+  CommentThreadDataSchema,
+  DebugBreakpointSchema,
+  DebugStackFrameSchema,
+  DebugVariableSchema,
   DiagnosticItemSchema,
+  LspCompletionItemSchema,
+  LspLocationSchema,
   ParticipantInfoSchema,
   PermissionSchema,
+  PositionSchema,
   RangeSchema,
   RoleSchema,
 } from './types.js';
@@ -226,6 +233,26 @@ export const FsReadResSchema = BaseMessageSchema.extend({
 });
 export type FsReadRes = z.infer<typeof FsReadResSchema>;
 
+export const FsReadChunkReqSchema = BaseMessageSchema.extend({
+  type: z.literal('fs.readChunk.req'),
+  id: z.string(),
+  path: z.string(),
+  offset: z.number().int().nonnegative(),
+  length: z.number().int().positive(),
+});
+export type FsReadChunkReq = z.infer<typeof FsReadChunkReqSchema>;
+
+export const FsReadChunkResSchema = BaseMessageSchema.extend({
+  type: z.literal('fs.readChunk.res'),
+  id: z.string(),
+  dataBase64: z.string(),
+  offset: z.number().int().nonnegative(),
+  bytesRead: z.number().int().nonnegative(),
+  totalSize: z.number().int().nonnegative(),
+  eof: z.boolean(),
+});
+export type FsReadChunkRes = z.infer<typeof FsReadChunkResSchema>;
+
 export const FsWriteReqSchema = BaseMessageSchema.extend({
   type: z.literal('fs.write.req'),
   id: z.string(),
@@ -352,8 +379,23 @@ export const CommentOpSchema = BaseMessageSchema.extend({
   anchorEndRelPos: z.string().optional(),
   body: z.string().max(4000).optional(),
   resolved: z.boolean().optional(),
+  authorId: z.string().optional(),
+  authorName: z.string().optional(),
 });
 export type CommentOp = z.infer<typeof CommentOpSchema>;
+
+export const CommentSyncReqSchema = BaseMessageSchema.extend({
+  type: z.literal('comment.sync.req'),
+  id: z.string(),
+});
+export type CommentSyncReq = z.infer<typeof CommentSyncReqSchema>;
+
+export const CommentSyncResSchema = BaseMessageSchema.extend({
+  type: z.literal('comment.sync.res'),
+  id: z.string(),
+  threads: z.array(CommentThreadDataSchema),
+});
+export type CommentSyncRes = z.infer<typeof CommentSyncResSchema>;
 
 // 6. Chat
 export const ChatMessageSchema = BaseMessageSchema.extend({
@@ -438,6 +480,132 @@ export const TerminalCloseSchema = BaseMessageSchema.extend({
 });
 export type TerminalClose = z.infer<typeof TerminalCloseSchema>;
 
+// 9. Phase 2: LSP Mirroring
+export const LspHoverReqSchema = BaseMessageSchema.extend({
+  type: z.literal('lsp.hover.req'),
+  id: z.string(),
+  path: z.string(),
+  position: PositionSchema,
+});
+export type LspHoverReq = z.infer<typeof LspHoverReqSchema>;
+
+export const LspHoverResSchema = BaseMessageSchema.extend({
+  type: z.literal('lsp.hover.res'),
+  id: z.string(),
+  contents: z.array(z.string()),
+  range: RangeSchema.optional(),
+});
+export type LspHoverRes = z.infer<typeof LspHoverResSchema>;
+
+export const LspCompletionReqSchema = BaseMessageSchema.extend({
+  type: z.literal('lsp.completion.req'),
+  id: z.string(),
+  path: z.string(),
+  position: PositionSchema,
+  triggerCharacter: z.string().optional(),
+});
+export type LspCompletionReq = z.infer<typeof LspCompletionReqSchema>;
+
+export const LspCompletionResSchema = BaseMessageSchema.extend({
+  type: z.literal('lsp.completion.res'),
+  id: z.string(),
+  items: z.array(LspCompletionItemSchema),
+});
+export type LspCompletionRes = z.infer<typeof LspCompletionResSchema>;
+
+export const LspDefinitionReqSchema = BaseMessageSchema.extend({
+  type: z.literal('lsp.definition.req'),
+  id: z.string(),
+  path: z.string(),
+  position: PositionSchema,
+});
+export type LspDefinitionReq = z.infer<typeof LspDefinitionReqSchema>;
+
+export const LspDefinitionResSchema = BaseMessageSchema.extend({
+  type: z.literal('lsp.definition.res'),
+  id: z.string(),
+  definitions: z.array(LspLocationSchema),
+});
+export type LspDefinitionRes = z.infer<typeof LspDefinitionResSchema>;
+
+export const LspReferencesReqSchema = BaseMessageSchema.extend({
+  type: z.literal('lsp.references.req'),
+  id: z.string(),
+  path: z.string(),
+  position: PositionSchema,
+  includeDeclaration: z.boolean().optional(),
+});
+export type LspReferencesReq = z.infer<typeof LspReferencesReqSchema>;
+
+export const LspReferencesResSchema = BaseMessageSchema.extend({
+  type: z.literal('lsp.references.res'),
+  id: z.string(),
+  references: z.array(LspLocationSchema),
+});
+export type LspReferencesRes = z.infer<typeof LspReferencesResSchema>;
+
+// 10. Phase 2: Shared Interactive Debugging
+export const DebugStateBroadcastSchema = BaseMessageSchema.extend({
+  type: z.literal('debug.state'),
+  state: z.enum(['inactive', 'running', 'stopped']),
+  sessionName: z.string().optional(),
+  reason: z.string().optional(),
+  threadId: z.number().int().optional(),
+  file: z.string().optional(),
+  line: z.number().int().optional(),
+});
+export type DebugStateBroadcast = z.infer<typeof DebugStateBroadcastSchema>;
+
+export const DebugStackReqSchema = BaseMessageSchema.extend({
+  type: z.literal('debug.stack.req'),
+  id: z.string(),
+  threadId: z.number().int().optional(),
+});
+export type DebugStackReq = z.infer<typeof DebugStackReqSchema>;
+
+export const DebugStackResSchema = BaseMessageSchema.extend({
+  type: z.literal('debug.stack.res'),
+  id: z.string(),
+  frames: z.array(DebugStackFrameSchema),
+});
+export type DebugStackRes = z.infer<typeof DebugStackResSchema>;
+
+export const DebugVariablesReqSchema = BaseMessageSchema.extend({
+  type: z.literal('debug.variables.req'),
+  id: z.string(),
+  frameId: z.number().int(),
+  variablesReference: z.number().int().optional(),
+});
+export type DebugVariablesReq = z.infer<typeof DebugVariablesReqSchema>;
+
+export const DebugVariablesResSchema = BaseMessageSchema.extend({
+  type: z.literal('debug.variables.res'),
+  id: z.string(),
+  variables: z.array(DebugVariableSchema),
+});
+export type DebugVariablesRes = z.infer<typeof DebugVariablesResSchema>;
+
+export const DebugStepReqSchema = BaseMessageSchema.extend({
+  type: z.literal('debug.step.req'),
+  id: z.string(),
+  action: z.enum(['continue', 'next', 'stepIn', 'stepOut', 'pause', 'restart', 'stop']),
+});
+export type DebugStepReq = z.infer<typeof DebugStepReqSchema>;
+
+export const DebugStepResSchema = BaseMessageSchema.extend({
+  type: z.literal('debug.step.res'),
+  id: z.string(),
+  success: z.boolean(),
+  error: z.string().optional(),
+});
+export type DebugStepRes = z.infer<typeof DebugStepResSchema>;
+
+export const DebugBreakpointsSyncSchema = BaseMessageSchema.extend({
+  type: z.literal('debug.breakpoints'),
+  breakpoints: z.array(DebugBreakpointSchema),
+});
+export type DebugBreakpointsSync = z.infer<typeof DebugBreakpointsSyncSchema>;
+
 // Union schema of all messages
 export const ColiveMessageSchema = z.discriminatedUnion('type', [
   HelloMessageSchema,
@@ -467,6 +635,8 @@ export const ColiveMessageSchema = z.discriminatedUnion('type', [
   FsStatResSchema,
   FsReadReqSchema,
   FsReadResSchema,
+  FsReadChunkReqSchema,
+  FsReadChunkResSchema,
   FsWriteReqSchema,
   FsWriteResSchema,
   FsCreateReqSchema,
@@ -483,6 +653,8 @@ export const ColiveMessageSchema = z.discriminatedUnion('type', [
   DocCloseSchema,
   DocSavedSchema,
   CommentOpSchema,
+  CommentSyncReqSchema,
+  CommentSyncResSchema,
   ChatMessageSchema,
   ChatSyncReqSchema,
   ChatSyncResSchema,
@@ -494,6 +666,22 @@ export const ColiveMessageSchema = z.discriminatedUnion('type', [
   TerminalInputSchema,
   TerminalResizeSchema,
   TerminalCloseSchema,
+  LspHoverReqSchema,
+  LspHoverResSchema,
+  LspCompletionReqSchema,
+  LspCompletionResSchema,
+  LspDefinitionReqSchema,
+  LspDefinitionResSchema,
+  LspReferencesReqSchema,
+  LspReferencesResSchema,
+  DebugStateBroadcastSchema,
+  DebugStackReqSchema,
+  DebugStackResSchema,
+  DebugVariablesReqSchema,
+  DebugVariablesResSchema,
+  DebugStepReqSchema,
+  DebugStepResSchema,
+  DebugBreakpointsSyncSchema,
 ]);
 
 export type ColiveMessage = z.infer<typeof ColiveMessageSchema>;

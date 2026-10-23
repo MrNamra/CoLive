@@ -236,4 +236,133 @@ describe('Message Parsing & Zod Validation', () => {
     const result2 = safeParseColiveMessage(invalidJson);
     expect(result2.success).toBe(false);
   });
+
+  describe('Phase 2 Protocol Schemas', () => {
+    it('parses chunked reading messages', () => {
+      const chunkReq = JSON.stringify({
+        v: 1,
+        type: 'fs.readChunk.req',
+        id: 'chunk_1',
+        path: 'images/logo.png',
+        offset: 0,
+        length: 65536,
+      });
+      const parsedReq = parseColiveMessage(chunkReq);
+      expect(parsedReq.type).toBe('fs.readChunk.req');
+
+      const chunkRes = JSON.stringify({
+        v: 1,
+        type: 'fs.readChunk.res',
+        id: 'chunk_1',
+        dataBase64: 'iVBORw0KGgoAAAANSUhEUg==',
+        offset: 0,
+        bytesRead: 16,
+        totalSize: 1024,
+        eof: false,
+      });
+      const parsedRes = parseColiveMessage(chunkRes);
+      expect(parsedRes.type).toBe('fs.readChunk.res');
+    });
+
+    it('parses LSP mirroring messages', () => {
+      const hoverReq = JSON.stringify({
+        v: 1,
+        type: 'lsp.hover.req',
+        id: 'hover_1',
+        path: 'src/main.ts',
+        position: { line: 10, character: 5 },
+      });
+      expect(parseColiveMessage(hoverReq).type).toBe('lsp.hover.req');
+
+      const hoverRes = JSON.stringify({
+        v: 1,
+        type: 'lsp.hover.res',
+        id: 'hover_1',
+        contents: ['**function hello()**', 'A friendly greeting'],
+      });
+      expect(parseColiveMessage(hoverRes).type).toBe('lsp.hover.res');
+
+      const compReq = JSON.stringify({
+        v: 1,
+        type: 'lsp.completion.req',
+        id: 'comp_1',
+        path: 'src/main.ts',
+        position: { line: 12, character: 3 },
+        triggerCharacter: '.',
+      });
+      expect(parseColiveMessage(compReq).type).toBe('lsp.completion.req');
+
+      const compRes = JSON.stringify({
+        v: 1,
+        type: 'lsp.completion.res',
+        id: 'comp_1',
+        items: [{ label: 'toString', kind: 1, detail: '() => string' }],
+      });
+      expect(parseColiveMessage(compRes).type).toBe('lsp.completion.res');
+
+      const defReq = JSON.stringify({
+        v: 1,
+        type: 'lsp.definition.req',
+        id: 'def_1',
+        path: 'src/main.ts',
+        position: { line: 15, character: 8 },
+      });
+      expect(parseColiveMessage(defReq).type).toBe('lsp.definition.req');
+
+      const defRes = JSON.stringify({
+        v: 1,
+        type: 'lsp.definition.res',
+        id: 'def_1',
+        definitions: [
+          { path: 'src/types.ts', range: { startLine: 5, startChar: 0, endLine: 5, endChar: 10 } },
+        ],
+      });
+      expect(parseColiveMessage(defRes).type).toBe('lsp.definition.res');
+    });
+
+    it('parses debug messages', () => {
+      const stateBroadcast = JSON.stringify({
+        v: 1,
+        type: 'debug.state',
+        state: 'stopped',
+        sessionName: 'Node Debug',
+        reason: 'breakpoint',
+        threadId: 1,
+        file: 'src/server.ts',
+        line: 42,
+      });
+      expect(parseColiveMessage(stateBroadcast).type).toBe('debug.state');
+
+      const stackReq = JSON.stringify({
+        v: 1,
+        type: 'debug.stack.req',
+        id: 'stack_1',
+        threadId: 1,
+      });
+      expect(parseColiveMessage(stackReq).type).toBe('debug.stack.req');
+
+      const stackRes = JSON.stringify({
+        v: 1,
+        type: 'debug.stack.res',
+        id: 'stack_1',
+        frames: [{ id: 100, name: 'handleRequest', file: 'src/server.ts', line: 42, column: 5 }],
+      });
+      expect(parseColiveMessage(stackRes).type).toBe('debug.stack.res');
+
+      const stepReq = JSON.stringify({
+        v: 1,
+        type: 'debug.step.req',
+        id: 'step_1',
+        action: 'stepIn',
+      });
+      expect(parseColiveMessage(stepReq).type).toBe('debug.step.req');
+
+      const breakpointsSync = JSON.stringify({
+        v: 1,
+        type: 'debug.breakpoints',
+        breakpoints: [{ id: 'bp_1', path: 'src/server.ts', line: 42, enabled: true }],
+      });
+      expect(parseColiveMessage(breakpointsSync).type).toBe('debug.breakpoints');
+    });
+  });
 });

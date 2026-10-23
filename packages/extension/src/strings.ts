@@ -31,4 +31,7 @@ export const Strings = {
   acceptReadOnly: 'Accept (Read-only)',
   decline: 'Decline',
   untrustedHostWarning: 'You are opening a remote workspace from an untrusted host. Code execution tasks are disabled.',
+  debugSessionActive: 'Shared debug session active.',
+  imagePreviewTitle: 'Image Preview',
+  noImageSelected: 'No image selected to preview.',
 };
