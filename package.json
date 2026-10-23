@@ -13,7 +13,7 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "npm run build --workspaces --if-present",
+    "build": "npm run build -w @colive/protocol && npm run build -w @colive/server && npm run build -w colive && npm run build -w @colive/e2e",
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
