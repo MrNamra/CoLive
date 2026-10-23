@@ -4,7 +4,7 @@
   "description": "Real-time collaborative editing, cursors, comments, and follow mode",
   "version": "1.0.0",
   "type": "module",
-  "publisher": "colive-team",
+  "publisher": "MrNamra",
   "license": "MIT",
   "repository": {
     "type": "git",
