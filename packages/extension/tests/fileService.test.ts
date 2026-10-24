@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { CoLiveError, PROTOCOL_VERSION } from '@colive/protocol';
+import { CoLiveError, PROTOCOL_VERSION, parseGitignoreRules, isGitIgnored } from '@colive/protocol';
 import { HostFileService } from '../src/host/fileService.js';
 
 describe('HostFileService Sandboxing & Traversal Defense', () => {
@@ -194,6 +194,112 @@ describe('HostFileService Sandboxing & Traversal Defense', () => {
     });
     expect(deleteRes.type).toBe('fs.delete.res');
     expect(fs.existsSync(path.join(tempRoot, 'subdir/renamed.js'))).toBe(false);
+  });
+});
+
+describe('HostFileService .gitignore Exclusion and Ordering', () => {
+  let gitRoot: string;
+  let service: HostFileService;
+
+  beforeAll(() => {
+    gitRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'colive-git-root-'));
+
+    // Create .gitignore
+    fs.writeFileSync(
+      path.join(gitRoot, '.gitignore'),
+      `
+# Comment
+node_modules/
+*.log
+dist
+temp/
+`,
+    );
+
+    // Create workspace files
+    fs.writeFileSync(path.join(gitRoot, 'package.json'), '{"name": "test"}');
+    fs.writeFileSync(path.join(gitRoot, 'debug.log'), 'log data');
+    fs.mkdirSync(path.join(gitRoot, 'node_modules'), { recursive: true });
+    fs.writeFileSync(path.join(gitRoot, 'node_modules', 'dep.js'), 'export const x = 1;');
+    fs.mkdirSync(path.join(gitRoot, 'dist'), { recursive: true });
+    fs.writeFileSync(path.join(gitRoot, 'dist', 'bundle.js'), 'bundle');
+    fs.mkdirSync(path.join(gitRoot, 'src'), { recursive: true });
+    fs.writeFileSync(path.join(gitRoot, 'src', 'index.ts'), 'console.log("hello");');
+
+    service = new HostFileService(gitRoot, ['.git/**'], 5);
+  });
+
+  afterAll(() => {
+    fs.rmSync(gitRoot, { recursive: true, force: true });
+  });
+
+  it('omits gitignored files when includeGitIgnored is false', async () => {
+    const res = await service.handleList({
+      v: PROTOCOL_VERSION,
+      type: 'fs.list.req',
+      id: 'list_nogit',
+      path: '',
+      includeGitIgnored: false,
+    });
+
+    const names = res.entries.map((e) => e.name);
+    // Non-gitignored files must be included
+    expect(names).toContain('.gitignore');
+    expect(names).toContain('package.json');
+    expect(names).toContain('src');
+
+    // Gitignored files must NOT be included
+    expect(names).not.toContain('debug.log');
+    expect(names).not.toContain('node_modules');
+    expect(names).not.toContain('dist');
+  });
+
+  it('fetches all files with gitignored files ordered last when includeGitIgnored is true', async () => {
+    const res = await service.handleList({
+      v: PROTOCOL_VERSION,
+      type: 'fs.list.req',
+      id: 'list_with_git',
+      path: '',
+      includeGitIgnored: true,
+    });
+
+    const entries = res.entries;
+    const names = entries.map((e) => e.name);
+
+    // All files should be present
+    expect(names).toContain('.gitignore');
+    expect(names).toContain('package.json');
+    expect(names).toContain('src');
+    expect(names).toContain('debug.log');
+    expect(names).toContain('node_modules');
+    expect(names).toContain('dist');
+
+    // Check ordering: non-gitignored files come first, gitignored files come last
+    const firstGitignoredIndex = entries.findIndex((e) => e.isGitIgnored === true);
+    expect(firstGitignoredIndex).toBeGreaterThan(-1);
+
+    // All entries before firstGitignoredIndex must have isGitIgnored false / undefined
+    for (let i = 0; i < firstGitignoredIndex; i++) {
+      expect(entries[i].isGitIgnored).toBeFalsy();
+    }
+
+    // All entries starting from firstGitignoredIndex must have isGitIgnored true
+    for (let i = firstGitignoredIndex; i < entries.length; i++) {
+      expect(entries[i].isGitIgnored).toBe(true);
+    }
+  });
+
+  it('correctly reports hasGitignore in workspace info', () => {
+    expect(service.hasGitignoreRules()).toBe(true);
+  });
+
+  it('pure helper parseGitignoreRules and isGitIgnored match correctly', () => {
+    const rules = parseGitignoreRules('dist\n*.log\nnode_modules/\n!src/keep.log');
+    expect(isGitIgnored('dist', rules)).toBe(true);
+    expect(isGitIgnored('dist/app.js', rules)).toBe(true);
+    expect(isGitIgnored('test.log', rules)).toBe(true);
+    expect(isGitIgnored('src/keep.log', rules)).toBe(false);
+    expect(isGitIgnored('.gitignore', rules)).toBe(false);
   });
 });
 

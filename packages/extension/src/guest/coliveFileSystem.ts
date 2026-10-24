@@ -36,6 +36,7 @@ export class CoLiveFileSystemProvider implements vscode.FileSystemProvider, vsco
   private connection: ConnectionManager;
   private isReadOnly = false;
   private isSyncedFile?: (relPath: string) => boolean;
+  private includeGitIgnored = false;
   private statCache: Map<string, CachedStat> = new Map();
   private dirCache: Map<string, CachedDir> = new Map();
   private fileCache: Map<string, CachedFile> = new Map();
@@ -54,6 +55,19 @@ export class CoLiveFileSystemProvider implements vscode.FileSystemProvider, vsco
 
   public setSyncedFileCheck(check: (relPath: string) => boolean): void {
     this.isSyncedFile = check;
+  }
+
+  public setIncludeGitIgnored(include: boolean): void {
+    if (this.includeGitIgnored !== include) {
+      this.includeGitIgnored = include;
+      this.dirCache.clear();
+      this.statCache.clear();
+      this._onDidChangeFile.fire([]);
+    }
+  }
+
+  public getIncludeGitIgnored(): boolean {
+    return this.includeGitIgnored;
   }
 
   public setReadOnly(isReadOnly: boolean): void {
@@ -173,6 +187,7 @@ export class CoLiveFileSystemProvider implements vscode.FileSystemProvider, vsco
         type: 'fs.list.req',
         id: `list_${Math.random().toString(36).slice(2, 9)}`,
         path: relPath,
+        includeGitIgnored: this.includeGitIgnored,
       };
 
       const res = await this.connection.request<FsListRes>(req);

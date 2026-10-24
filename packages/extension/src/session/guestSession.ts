@@ -7,6 +7,7 @@ import {
   PROTOCOL_VERSION,
   ServerJoinAccepted,
   ServerJoinRejected,
+  WorkspaceInfoRes,
 } from '@colive/protocol';
 import { ConnectionManager } from '../connection.js';
 import { Logger } from '../logger.js';
@@ -250,6 +251,7 @@ export class GuestSession extends SessionController {
           this.setState('active');
           this._onDidChangeParticipants.fire(this.getParticipants());
           vscode.window.showInformationMessage(Strings.joinApproved);
+          void this.handleGitignoredFilesPrompt();
         }
       },
     );
@@ -504,5 +506,74 @@ export class GuestSession extends SessionController {
     }
 
     super.dispose();
+  }
+
+  public toggleGitIgnoredFiles(): boolean {
+    if (!this.fsProvider) return false;
+    const next = !this.fsProvider.getIncludeGitIgnored();
+    this.fsProvider.setIncludeGitIgnored(next);
+    vscode.window.showInformationMessage(
+      next
+        ? 'CoLive: Showing gitignored files (loaded last).'
+        : 'CoLive: Hiding gitignored files.',
+    );
+    return next;
+  }
+
+  public getIncludeGitIgnored(): boolean {
+    return this.fsProvider ? this.fsProvider.getIncludeGitIgnored() : false;
+  }
+
+  public setIncludeGitIgnored(include: boolean): void {
+    this.fsProvider?.setIncludeGitIgnored(include);
+  }
+
+  private async handleGitignoredFilesPrompt(): Promise<void> {
+    if (!this.connection || !this.fsProvider) return;
+    try {
+      const config = vscode.workspace.getConfiguration('colive');
+      const setting = config.get<string>('loadGitIgnoredFiles', 'prompt');
+
+      if (setting === 'always') {
+        this.fsProvider.setIncludeGitIgnored(true);
+        return;
+      }
+      if (setting === 'never') {
+        this.fsProvider.setIncludeGitIgnored(false);
+        return;
+      }
+
+      // Check if the host workspace actually contains gitignore rules
+      try {
+        const info = await this.connection.request<WorkspaceInfoRes>(
+          {
+            v: PROTOCOL_VERSION,
+            type: 'workspace.info.req',
+          },
+          5000,
+        );
+        if (info && info.hasGitignore === false) {
+          // No gitignore in workspace, keep default
+          return;
+        }
+      } catch {
+        // Fallback: proceed to prompt if request fails
+      }
+
+      const choice = await vscode.window.showInformationMessage(
+        'Do you want to load gitignored files in this workspace?',
+        'No, Skip Gitignored',
+        'Yes, Load All (Gitignored Last)',
+      );
+
+      if (choice === 'Yes, Load All (Gitignored Last)') {
+        this.fsProvider.setIncludeGitIgnored(true);
+        vscode.window.setStatusBarMessage('CoLive: Loading all files (gitignored files loaded last)', 4000);
+      } else {
+        this.fsProvider.setIncludeGitIgnored(false);
+      }
+    } catch (err) {
+      Logger.warn('Error during gitignore prompt', { err });
+    }
   }
 }

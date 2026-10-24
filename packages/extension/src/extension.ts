@@ -893,6 +893,16 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
   );
 
+  context.subscriptions.push(
+    vscode.commands.registerCommand('colive.toggleGitIgnoredFiles', async () => {
+      if (!(activeSession instanceof GuestSession)) {
+        vscode.window.showInformationMessage('Gitignored files visibility toggle is only available in guest mode.');
+        return;
+      }
+      activeSession.toggleGitIgnoredFiles();
+    }),
+  );
+
   Logger.info('CoLive extension activated successfully.');
 }
 

@@ -75,6 +75,11 @@ export function normalizeTerminalInput(data: string): string {
   return data.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
 }
 
+export function formatTerminalOutput(data: string): string {
+  // Convert any \n into \r\n to prevent the terminal staircase effect in pseudoterminals
+  return data.replace(/\r*\n/g, '\r\n');
+}
+
 export interface HostTerminalSession {
   terminalId: string;
   name: string;
@@ -96,6 +101,37 @@ export class HostTerminalService implements vscode.Disposable {
     this.disposables.push(
       this.connectionManager.onMessage((msg) => this.handleMessage(msg)),
     );
+    this.disposables.push(
+      vscode.window.onDidCloseTerminal((closedTerm) => {
+        for (const [id, session] of this.terminals.entries()) {
+          if (session.terminal === closedTerm) {
+            this.closeTerminal(id);
+          }
+        }
+      }),
+    );
+    // Broadcast active terminal to new participants so their terminal mirrors immediately
+    this.disposables.push(
+      this.connectionManager.onMessage((msg) => {
+        if (msg.type === 'server.participantJoined') {
+          for (const term of this.terminals.values()) {
+            const welcome =
+              `\x1b[32m[CoLive] Shared Terminal active (${term.name})\x1b[0m\r\n` +
+              `\x1b[90mOutput is mirrored in real time.\x1b[0m\r\n\r\n`;
+            const replay =
+              term.scrollbackLines.length > 0
+                ? term.scrollbackLines.join('\r\n') + '\r\n'
+                : welcome;
+            this.connectionManager.send({
+              v: PROTOCOL_VERSION,
+              type: 'terminal.data',
+              terminalId: term.terminalId,
+              data: replay,
+            });
+          }
+        }
+      }),
+    );
   }
 
   public shareTerminal(name = 'CoLive Shared Terminal'): HostTerminalSession {
@@ -112,6 +148,8 @@ export class HostTerminalService implements vscode.Disposable {
         ...process.env,
         TERM: 'xterm-256color',
         COLIVE_TERMINAL: '1',
+        COLUMNS: '120',
+        LINES: '30',
       },
     });
 
@@ -130,8 +168,11 @@ export class HostTerminalService implements vscode.Disposable {
         flushTimer = null;
       }
 
+      // Format output with \r\n to prevent the terminal staircase effect
+      const formatted = formatTerminalOutput(data);
+
       // Update scrollback lines
-      const splitLines = data.split('\n');
+      const splitLines = formatted.split('\r\n');
       for (const line of splitLines) {
         scrollbackLines.push(line);
         if (scrollbackLines.length > MAX_SCROLLBACK_LINES) {
@@ -140,14 +181,14 @@ export class HostTerminalService implements vscode.Disposable {
       }
 
       // Emit locally to host pseudoterminal
-      writeEmitter.fire(data);
+      writeEmitter.fire(formatted);
 
       // Broadcast to all participants in session
       const terminalDataMsg: TerminalData = {
         v: PROTOCOL_VERSION,
         type: 'terminal.data',
         terminalId,
-        data,
+        data: formatted,
       };
       this.connectionManager.send(terminalDataMsg);
     };
@@ -173,37 +214,66 @@ export class HostTerminalService implements vscode.Disposable {
 
     child.on('exit', (code) => {
       flushOutput();
-      const closeMsg: TerminalClose = {
-        v: PROTOCOL_VERSION,
-        type: 'terminal.close',
-        terminalId,
-      };
-      this.connectionManager.send(closeMsg);
+      if (this.terminals.has(terminalId)) {
+        this.terminals.delete(terminalId);
+        const closeMsg: TerminalClose = {
+          v: PROTOCOL_VERSION,
+          type: 'terminal.close',
+          terminalId,
+        };
+        this.connectionManager.send(closeMsg);
+      }
       writeEmitter.fire(`\r\n\x1b[33m[Process exited with code ${code ?? 0}]\x1b[0m\r\n`);
       closeEmitter.fire(code ?? 0);
-      this.terminals.delete(terminalId);
     });
+
+    const killChildProcess = () => {
+      try {
+        if (!child.killed) {
+          child.kill('SIGTERM');
+          setTimeout(() => {
+            try {
+              if (!child.killed) child.kill('SIGKILL');
+            } catch {
+              // Already dead
+            }
+          }, 300);
+        }
+      } catch {
+        // Already dead
+      }
+    };
 
     const pty: vscode.Pseudoterminal = {
       onDidWrite: writeEmitter.event,
       onDidClose: closeEmitter.event,
       open: () => {
-        writeEmitter.fire(
+        const welcome =
           `\x1b[32m[CoLive] Shared Terminal started (${name})\x1b[0m\r\n` +
-          `\x1b[90mGuests can view output in real-time. Use 'CoLive: Toggle Terminal Guest Permissions' to allow typing.\x1b[0m\r\n\r\n`,
-        );
+          `\x1b[90mGuests can view output in real-time. Use 'CoLive: Toggle Terminal Guest Permissions' to allow typing.\x1b[0m\r\n\r\n`;
+        writeEmitter.fire(welcome);
+        // Broadcast initial terminal creation to all guests so mirrored terminal opens immediately
+        this.connectionManager.send({
+          v: PROTOCOL_VERSION,
+          type: 'terminal.data',
+          terminalId,
+          data: welcome,
+        });
       },
       close: () => {
-        child.kill();
-        if (flushTimer) clearTimeout(flushTimer);
+        this.closeTerminal(terminalId);
       },
       handleInput: (data: string) => {
         if (!child.stdin.destroyed) {
           child.stdin.write(normalizeTerminalInput(data));
         }
       },
-      setDimensions: (_dims: vscode.TerminalDimensions) => {
-        // Host terminal dimensions
+      setDimensions: (dims: vscode.TerminalDimensions) => {
+        if (dims && dims.columns && dims.rows) {
+          if ('setWindowSize' in child.stdout && typeof (child.stdout as any).setWindowSize === 'function') {
+            (child.stdout as any).setWindowSize(dims.columns, dims.rows);
+          }
+        }
       },
     };
 
@@ -221,17 +291,41 @@ export class HostTerminalService implements vscode.Disposable {
       scrollbackLines,
       guestWriteAllowed: false, // Read-only by default for guests
       dispose: () => {
-        if (flushTimer) clearTimeout(flushTimer);
-        child.kill();
+        if (flushTimer) {
+          clearTimeout(flushTimer);
+          flushTimer = null;
+        }
+        killChildProcess();
         writeEmitter.dispose();
         closeEmitter.dispose();
-        terminal.dispose();
+        try {
+          terminal.dispose();
+        } catch {
+          // Already disposed
+        }
         this.terminals.delete(terminalId);
       },
     };
 
     this.terminals.set(terminalId, session);
     return session;
+  }
+
+  public closeTerminal(terminalId: string): void {
+    const session = this.terminals.get(terminalId);
+    if (!session) return;
+
+    this.terminals.delete(terminalId);
+
+    // Notify all participants in session that host closed the terminal
+    const closeMsg: TerminalClose = {
+      v: PROTOCOL_VERSION,
+      type: 'terminal.close',
+      terminalId,
+    };
+    this.connectionManager.send(closeMsg);
+
+    session.dispose();
   }
 
   public toggleGuestWrite(terminalId: string, allowed?: boolean): boolean {
@@ -255,8 +349,27 @@ export class HostTerminalService implements vscode.Disposable {
         this.terminals.values().next().value;
 
       if (!activeTerm) {
-        // Auto-create shared terminal so guest or host can access it immediately
-        activeTerm = this.shareTerminal(req.name || 'CoLive Shared Terminal');
+        // Do not silently spawn an unmonitored shell if host closed the terminal!
+        // Notify host that guest requested terminal, and reject request with informative error
+        vscode.window
+          .showInformationMessage(
+            'CoLive: A guest requested access to a shared terminal.',
+            'Share Terminal',
+          )
+          .then((action) => {
+            if (action === 'Share Terminal') {
+              this.shareTerminal(req.name || 'CoLive Shared Terminal');
+            }
+          });
+
+        const errorMsg: ColiveMessage = {
+          v: PROTOCOL_VERSION,
+          type: 'error',
+          id: req.id,
+          message: 'No active shared terminal. The host has not started a shared terminal or has closed it.',
+        };
+        this.connectionManager.send(errorMsg);
+        return;
       }
 
       // Send terminal.open.res with terminalId
@@ -268,9 +381,9 @@ export class HostTerminalService implements vscode.Disposable {
       };
       this.connectionManager.send(resMsg);
 
-      // Replay scrollback buffer so guest immediately sees prior output
+      // Replay scrollback buffer so guest immediately sees prior output formatted with CRLF
       if (activeTerm.scrollbackLines.length > 0) {
-        const replayData = activeTerm.scrollbackLines.join('\n');
+        const replayData = activeTerm.scrollbackLines.join('\r\n') + '\r\n';
         this.connectionManager.send({
           v: PROTOCOL_VERSION,
           type: 'terminal.data',
@@ -285,19 +398,26 @@ export class HostTerminalService implements vscode.Disposable {
     if (msg.type === 'terminal.input') {
       const inputMsg = msg as TerminalInput;
       const term = this.terminals.get(inputMsg.terminalId);
-      if (term) {
-        if (!term.guestWriteAllowed) {
-          this.connectionManager.send({
-            v: PROTOCOL_VERSION,
-            type: 'terminal.data',
-            terminalId: term.terminalId,
-            data: '\r\n\x1b[33m[Host has set this shared terminal to read-only. Ask host to allow typing.]\x1b[0m\r\n',
-          });
-          return;
-        }
-        if (!term.childProcess.stdin.destroyed) {
-          term.childProcess.stdin.write(normalizeTerminalInput(inputMsg.data));
-        }
+      if (!term) {
+        // Terminal is closed on host: inform guest and drop input
+        this.connectionManager.send({
+          v: PROTOCOL_VERSION,
+          type: 'terminal.close',
+          terminalId: inputMsg.terminalId,
+        });
+        return;
+      }
+      if (!term.guestWriteAllowed) {
+        this.connectionManager.send({
+          v: PROTOCOL_VERSION,
+          type: 'terminal.data',
+          terminalId: term.terminalId,
+          data: '\r\n\x1b[33m[Host has set this shared terminal to read-only. Ask host to allow typing.]\x1b[0m\r\n',
+        });
+        return;
+      }
+      if (!term.childProcess.stdin.destroyed) {
+        term.childProcess.stdin.write(normalizeTerminalInput(inputMsg.data));
       }
       return;
     }

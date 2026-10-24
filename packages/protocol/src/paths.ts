@@ -147,3 +147,99 @@ export function isImageFile(filePath: string): boolean {
   const ext = filePath.slice(lastDot).toLowerCase();
   return IMAGE_EXTENSIONS.has(ext);
 }
+
+const matcherCache = new Map<string, (test: string) => boolean>();
+
+function getMatcher(pattern: string): (test: string) => boolean {
+  let m = matcherCache.get(pattern);
+  if (!m) {
+    m = picomatch(pattern, { dot: true, nocase: true });
+    matcherCache.set(pattern, m);
+  }
+  return m;
+}
+
+/**
+ * Converts a .gitignore rule into picomatch-compatible globs.
+ * Supports directory-specific rules ending in / and negation rules starting with !.
+ */
+export function gitignoreToGlobs(rule: string): string[] {
+  let r = rule.trim();
+  if (!r || r.startsWith('#')) return [];
+
+  const isNegation = r.startsWith('!');
+  if (isNegation) {
+    r = r.slice(1).trim();
+    if (!r) return [];
+  }
+
+  // Directory-specific rule ending with /
+  const isDir = r.endsWith('/');
+  if (isDir) {
+    r = r.slice(0, -1);
+  }
+
+  const baseGlobs: string[] = [];
+  if (r.startsWith('/')) {
+    const unanchored = r.slice(1);
+    baseGlobs.push(unanchored, `${unanchored}/**`);
+  } else if (!r.includes('/')) {
+    baseGlobs.push(r, `**/${r}`, `${r}/**`, `**/${r}/**`);
+  } else {
+    baseGlobs.push(r, `${r}/**`, `**/${r}/**`);
+  }
+
+  return isNegation ? baseGlobs.map((g) => `!${g}`) : baseGlobs;
+}
+
+/**
+ * Parses raw .gitignore file content into picomatch-compatible globs.
+ */
+export function parseGitignoreRules(content: string): string[] {
+  if (!content) return [];
+  const lines = content.split(/\r?\n/);
+  return lines.flatMap(gitignoreToGlobs);
+}
+
+/**
+ * Checks whether a relative path matches any .gitignore rule.
+ * Evaluates rules sequentially so negation rules (!pattern) override earlier patterns.
+ * Note: The .gitignore file itself is a tracked configuration file and is never ignored.
+ */
+export function isGitIgnored(relPath: string, gitignoreGlobs: string[]): boolean {
+  if (!gitignoreGlobs || gitignoreGlobs.length === 0) return false;
+  const normalized = relPath.replace(/\\/g, '/').replace(/^\/+/, '');
+  if (!normalized) return false;
+
+  // .gitignore itself is never gitignored
+  const baseName = normalized.split('/').pop();
+  if (baseName === '.gitignore') return false;
+
+  let ignored = false;
+  const parts = normalized.split('/');
+
+  for (const glob of gitignoreGlobs) {
+    const isNegation = glob.startsWith('!');
+    const pattern = isNegation ? glob.slice(1) : glob;
+    const matcher = getMatcher(pattern);
+
+    let match = matcher(normalized);
+    if (!match) {
+      let current = '';
+      for (let i = 0; i < parts.length; i++) {
+        current = current ? `${current}/${parts[i]}` : parts[i]!;
+        if (matcher(current)) {
+          match = true;
+          break;
+        }
+      }
+    }
+
+    if (match) {
+      ignored = !isNegation;
+    }
+  }
+
+  return ignored;
+}
+

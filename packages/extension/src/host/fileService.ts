@@ -22,9 +22,11 @@ import {
   FsWriteReq,
   FsWriteRes,
   isExcluded,
+  isGitIgnored,
   isImageFile,
   MAX_ASSET_BYTES,
   normalizeWorkspacePath,
+  parseGitignoreRules,
   PROTOCOL_VERSION,
 } from '@colive/protocol';
 import { ConnectionManager } from '../connection.js';
@@ -34,6 +36,7 @@ export class HostFileService implements vscode.Disposable {
   private realWorkspaceRoot: string;
   private excludePatterns: string[];
   private maxFileSizeBytes: number;
+  private gitignoreGlobs: string[] = [];
   private connection: ConnectionManager | null = null;
   private watcher: vscode.FileSystemWatcher | null = null;
   private pendingChanges: FsWatchChange[] = [];
@@ -51,6 +54,29 @@ export class HostFileService implements vscode.Disposable {
       : this.workspaceRoot;
     this.excludePatterns = excludePatterns;
     this.maxFileSizeBytes = maxFileSizeMB * 1024 * 1024;
+    this.loadGitignore();
+  }
+
+  public loadGitignore(): void {
+    const gitignorePath = path.join(this.workspaceRoot, '.gitignore');
+    try {
+      if (fs.existsSync(gitignorePath)) {
+        const content = fs.readFileSync(gitignorePath, 'utf-8');
+        this.gitignoreGlobs = parseGitignoreRules(content);
+      } else {
+        this.gitignoreGlobs = [];
+      }
+    } catch {
+      this.gitignoreGlobs = [];
+    }
+  }
+
+  public isGitIgnored(relPath: string): boolean {
+    return isGitIgnored(relPath, this.gitignoreGlobs);
+  }
+
+  public hasGitignoreRules(): boolean {
+    return this.gitignoreGlobs.length > 0;
   }
 
   public setConnection(connection: ConnectionManager | null): void {
@@ -90,6 +116,7 @@ export class HostFileService implements vscode.Disposable {
               name: path.basename(this.workspaceRoot),
               rootLabel: path.basename(this.workspaceRoot),
               excludePatterns: this.excludePatterns,
+              hasGitignore: this.gitignoreGlobs.length > 0,
             });
           }
         } catch (err) {
@@ -175,7 +202,8 @@ export class HostFileService implements vscode.Disposable {
     }
 
     const dirents = await fs.promises.readdir(fullPath, { withFileTypes: true });
-    const entries: FsEntry[] = [];
+    const nonGitIgnoredEntries: FsEntry[] = [];
+    const gitIgnoredEntries: FsEntry[] = [];
 
     for (const dirent of dirents) {
       const childRelPath = relPath ? `${relPath}/${dirent.name}` : dirent.name;
@@ -184,19 +212,36 @@ export class HostFileService implements vscode.Disposable {
         continue;
       }
 
+      const isIgnored = this.isGitIgnored(childRelPath);
+
+      // If guest chose not to load gitignored files, skip them
+      if (req.includeGitIgnored === false && isIgnored) {
+        continue;
+      }
+
       const childFullPath = path.join(fullPath, dirent.name);
       try {
         const childStat = await fs.promises.stat(childFullPath);
-        entries.push({
+        const entry: FsEntry = {
           name: dirent.name,
           type: dirent.isDirectory() ? 'dir' : dirent.isSymbolicLink() ? 'symlink' : 'file',
           size: dirent.isDirectory() ? 0 : childStat.size,
           mtime: Math.floor(childStat.mtimeMs),
-        });
+          isGitIgnored: isIgnored,
+        };
+
+        if (isIgnored) {
+          gitIgnoredEntries.push(entry);
+        } else {
+          nonGitIgnoredEntries.push(entry);
+        }
       } catch {
         // Skip unreadable files
       }
     }
+
+    // Crucial requirement: non-gitignored files fetched first, gitignored files fetched last
+    const entries: FsEntry[] = [...nonGitIgnoredEntries, ...gitIgnoredEntries];
 
     return {
       v: PROTOCOL_VERSION,
@@ -421,6 +466,10 @@ export class HostFileService implements vscode.Disposable {
     const filePath = typeof uri === 'string' ? uri : uri.fsPath;
     const rel = path.relative(this.workspaceRoot, filePath).replace(/\\/g, '/');
     if (!rel || rel.startsWith('..')) return;
+
+    if (rel === '.gitignore') {
+      this.loadGitignore();
+    }
 
     if (this.excludePatterns.length > 0 && isExcluded(rel, this.excludePatterns)) {
       return;

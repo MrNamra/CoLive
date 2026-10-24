@@ -2,6 +2,17 @@
 
 All notable changes to the "colive" extension will be documented in this file.
 
+## [1.0.1] - 2026-10-24
+### Added
+- **Configurable Gitignored Files Loading**: Added `colive.loadGitIgnoredFiles` configuration (`prompt`, `always`, `never`) and `colive.toggleGitIgnoredFiles` command.
+- **Gitignore Rule Support**: Full `.gitignore` rule parsing supporting comments, directory rules (`dir/`), sequential evaluation, and negation rules (`!pattern`). The `.gitignore` configuration file itself is always tracked and visible.
+- **Guest Workspace Prompt**: Prompts guest users upon joining whether to load gitignored files.
+- **Ordered File Fetching**: When loading gitignored files, all non-gitignored files are fetched and displayed first, and gitignored files are fetched last.
+
+### Fixed
+- **Terminal Staircase & Output Formatting**: Normalized terminal newlines (`\r\n`) to eliminate staircase rendering on guest and host shared terminals.
+- **Terminal Mirroring & Synchronization**: Enhanced terminal output streaming and mirroring stability between host and guests.
+
 ## [1.0.0] - 2026-10-23
 ### Added
 - **Production-Ready 1.0.0 Release**: Full suite of pair programming and real-time collaboration features.

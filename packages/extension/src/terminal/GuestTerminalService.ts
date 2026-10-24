@@ -11,6 +11,7 @@ import {
   TerminalResize,
 } from '@colive/protocol';
 import { ConnectionManager } from '../connection.js';
+import { formatTerminalOutput } from './HostTerminalService.js';
 
 export interface GuestTerminalInstance {
   terminalId: string;
@@ -34,6 +35,85 @@ export class GuestTerminalService implements vscode.Disposable {
 
   public setReadOnly(readOnly: boolean): void {
     this.isReadOnly = readOnly;
+  }
+
+  public createGuestTerminalInstance(
+    terminalId: string,
+    name = 'CoLive Shared Terminal',
+  ): GuestTerminalInstance {
+    const existing = this.terminals.get(terminalId);
+    if (existing) {
+      if (existing.terminal) existing.terminal.show();
+      return existing;
+    }
+
+    const writeEmitter = new vscode.EventEmitter<string>();
+    const closeEmitter = new vscode.EventEmitter<number | void>();
+
+    const pty: vscode.Pseudoterminal = {
+      onDidWrite: writeEmitter.event,
+      onDidClose: closeEmitter.event,
+      open: () => {
+        writeEmitter.fire(
+          `\x1b[36m[CoLive] Connected to Host Shared Terminal: ${name}\x1b[0m\r\n` +
+          `\x1b[90mOutput is mirrored in real time.\x1b[0m\r\n\r\n`,
+        );
+      },
+      close: () => {
+        this.terminals.delete(terminalId);
+      },
+      handleInput: (data: string) => {
+        if (this.isReadOnly) {
+          vscode.window.showInformationMessage('CoLive Terminal is in read-only mode (requires "Terminal Access" permission from host).');
+          return;
+        }
+        const inputMsg: TerminalInput = {
+          v: PROTOCOL_VERSION,
+          type: 'terminal.input',
+          terminalId,
+          data,
+        };
+        this.connectionManager.send(inputMsg);
+      },
+      setDimensions: (dims: vscode.TerminalDimensions) => {
+        const resizeMsg: TerminalResize = {
+          v: PROTOCOL_VERSION,
+          type: 'terminal.resize',
+          terminalId,
+          cols: dims.columns,
+          rows: dims.rows,
+        };
+        this.connectionManager.send(resizeMsg);
+      },
+    };
+
+    const terminal = vscode.window.createTerminal({
+      name: `CoLive: Host Terminal (${name})`,
+      pty,
+      isTransient: true,
+      iconPath: new vscode.ThemeIcon('broadcast'),
+    });
+    terminal.show();
+
+    const instance: GuestTerminalInstance = {
+      terminalId,
+      terminal,
+      writeEmitter,
+      closeEmitter,
+      dispose: () => {
+        writeEmitter.dispose();
+        closeEmitter.dispose();
+        try {
+          terminal.dispose();
+        } catch {
+          // Already disposed
+        }
+        this.terminals.delete(terminalId);
+      },
+    };
+
+    this.terminals.set(terminalId, instance);
+    return instance;
   }
 
   public async createSharedPseudoterminal(name = 'CoLive Shared Terminal'): Promise<{
@@ -152,7 +232,11 @@ export class GuestTerminalService implements vscode.Disposable {
       dispose: () => {
         writeEmitter.dispose();
         closeEmitter.dispose();
-        terminal.dispose();
+        try {
+          terminal.dispose();
+        } catch {
+          // Already disposed
+        }
         this.terminals.delete(terminalId);
       },
     };
@@ -177,10 +261,11 @@ export class GuestTerminalService implements vscode.Disposable {
 
     if (msg.type === 'terminal.data') {
       const dataMsg = msg as TerminalData;
-      const instance = this.terminals.get(dataMsg.terminalId);
-      if (instance) {
-        instance.writeEmitter.fire(dataMsg.data);
+      let instance = this.terminals.get(dataMsg.terminalId);
+      if (!instance) {
+        instance = this.createGuestTerminalInstance(dataMsg.terminalId);
       }
+      instance.writeEmitter.fire(formatTerminalOutput(dataMsg.data));
       return;
     }
 

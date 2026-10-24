@@ -342,6 +342,7 @@ export const onDidChangeActiveTextEditorEmitter = new EventEmitter<unknown>();
 export const onDidChangeVisibleTextEditorsEmitter = new EventEmitter<unknown>();
 export const onDidChangeTextEditorSelectionEmitter = new EventEmitter<unknown>();
 export const onDidChangeTextEditorVisibleRangesEmitter = new EventEmitter<unknown>();
+export const onDidCloseTerminalEmitter = new EventEmitter<unknown>();
 export enum StatusBarAlignment {
   Left = 1,
   Right = 2,
@@ -401,6 +402,7 @@ export const window = {
   onDidChangeVisibleTextEditors: onDidChangeVisibleTextEditorsEmitter.event,
   onDidChangeTextEditorSelection: onDidChangeTextEditorSelectionEmitter.event,
   onDidChangeTextEditorVisibleRanges: onDidChangeTextEditorVisibleRangesEmitter.event,
+  onDidCloseTerminal: onDidCloseTerminalEmitter.event,
   showTextDocument: async (docOrUri: unknown, _opts?: unknown): Promise<unknown> => {
     return {
       document: docOrUri,

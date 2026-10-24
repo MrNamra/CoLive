@@ -2,7 +2,7 @@
   "name": "colive",
   "displayName": "CoLive - Real-time Collaboration",
   "description": "Real-time collaborative editing, cursors, comments, and follow mode",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "type": "module",
   "publisher": "MrNamra",
   "license": "MIT",
@@ -244,6 +244,12 @@
         "command": "colive.setTunnelUrl",
         "title": "CoLive: Set Cloudflare Tunnel URL",
         "category": "CoLive"
+      },
+      {
+        "command": "colive.toggleGitIgnoredFiles",
+        "title": "CoLive: Toggle Gitignored Files Visibility",
+        "category": "CoLive",
+        "icon": "$(eye)"
       },
       {
         "command": "colive.debugContinue",
@@ -533,6 +539,16 @@
           "type": "boolean",
           "default": true,
           "description": "Enable End-to-End Encryption for all session content."
+        },
+        "colive.loadGitIgnoredFiles": {
+          "type": "string",
+          "enum": [
+            "prompt",
+            "always",
+            "never"
+          ],
+          "default": "prompt",
+          "description": "Whether to load gitignored files in guest mode. When loaded, gitignored files are always fetched after non-gitignored files."
         }
       }
     },

@@ -183,6 +183,7 @@ export const FsEntrySchema = z.object({
   type: z.enum(['file', 'dir', 'symlink']),
   size: z.number().int().nonnegative(),
   mtime: z.number().int().nonnegative(),
+  isGitIgnored: z.boolean().optional(),
 });
 export type FsEntry = z.infer<typeof FsEntrySchema>;
 
@@ -190,6 +191,7 @@ export const FsListReqSchema = BaseMessageSchema.extend({
   type: z.literal('fs.list.req'),
   id: z.string(),
   path: z.string(),
+  includeGitIgnored: z.boolean().optional(),
 });
 export type FsListReq = z.infer<typeof FsListReqSchema>;
 
@@ -335,6 +337,7 @@ export const WorkspaceInfoResSchema = BaseMessageSchema.extend({
   name: z.string(),
   rootLabel: z.string(),
   excludePatterns: z.array(z.string()),
+  hasGitignore: z.boolean().optional(),
 });
 export type WorkspaceInfoRes = z.infer<typeof WorkspaceInfoResSchema>;
 
